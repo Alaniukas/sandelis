@@ -30,7 +30,13 @@ function LoginForm() {
       });
 
       if (!res.ok) {
-        setError("Neteisingas vartotojo vardas arba slaptažodis.");
+        if (res.status === 503) {
+          setError(
+            "Prisijungimas nesukonfigūruotas serveryje — Vercel env: WMS_AUTH_USERNAME, WMS_AUTH_EMAIL, NEXT_PUBLIC_SUPABASE_*.",
+          );
+        } else {
+          setError("Neteisingas vartotojo vardas arba slaptažodis.");
+        }
         setLoading(false);
         return;
       }

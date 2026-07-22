@@ -2,6 +2,14 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { v4 as uuid } from "uuid";
 import type { CustomField, ParsedDocument, ParsedLine } from "./types";
 
+/** Override via GEMINI_MODEL env (e.g. gemini-2.5-flash-lite). */
+const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+
+function getGeminiModel(key: string) {
+  const genAI = new GoogleGenerativeAI(key);
+  return genAI.getGenerativeModel({ model: GEMINI_MODEL });
+}
+
 const SCHEMA_HINT = `Return ONLY valid JSON with this shape:
 {
   "source": "string (gamintojo arba šaltinio pavadinimas)",
@@ -191,8 +199,7 @@ export async function parseTextWithGemini(
     };
   }
 
-  const genAI = new GoogleGenerativeAI(key);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = getGeminiModel(key);
   const prompt = `Tu esi universalus sandėlio dokumentų parseris.
 Iš bet kokio teksto (el. laiškas, užrašai, kopijuotas PDF tekstas) ištrauk struktūruotą info.
 ${SCHEMA_HINT}
@@ -224,8 +231,7 @@ export async function parseDocumentWithGemini(params: {
     );
   }
 
-  const genAI = new GoogleGenerativeAI(key);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = getGeminiModel(key);
 
   const prompt = `Tu esi universalus sandėlio dokumentų parseris.
 Ištrauk info iš dokumento (PDF, screenshot, sąskaita, packing list, važtaraštis, el. laiškas).
@@ -263,8 +269,7 @@ export async function refinePlacementReasonWithGemini(params: {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return params.suggestion.reason;
 
-  const genAI = new GoogleGenerativeAI(key);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = getGeminiModel(key);
   const prompt = `Tu esi sandėlio planuotojas (EXPO / DILED, stelažai 1–18).
 Klientas parašė: """${params.notes}"""
 Siūloma vieta: ${params.suggestion.code} (stelažas ${params.suggestion.rack})${
