@@ -639,7 +639,7 @@ export function NewShipmentModal({
               </select>
             </Field>
             {!occupyEntireRack && (
-              <Field label="Dėžių / palečių sk.">
+              <Field label="Dėžių / palečių sk. (bendras)">
                 <input
                   type="number"
                   min={1}

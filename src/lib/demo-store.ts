@@ -63,6 +63,47 @@ function migrateUnit(u: Unit): Unit {
   };
 }
 
+/** Seniau kiekviena dėžė kūrė atskirą unit — sujungiam toje pačioje vietoje. */
+function consolidateDuplicatePlacedUnits(state: AppState): AppState {
+  const byKey = new Map<string, Unit[]>();
+  for (const u of state.units) {
+    if (u.status === "archived" || u.status === "issued") continue;
+    const locKey = u.locationId ?? "";
+    const floorKey = u.floorAreaId ?? "";
+    if (!locKey && !floorKey) continue;
+    const key = `${u.orderId}|${locKey}|${floorKey}|${u.status}`;
+    const list = byKey.get(key) ?? [];
+    list.push(u);
+    byKey.set(key, list);
+  }
+
+  const removeIds = new Set<string>();
+  const totalInSetPatch = new Map<string, number>();
+
+  for (const group of byKey.values()) {
+    if (group.length <= 1) continue;
+    const total = Math.max(
+      group.reduce((max, u) => Math.max(max, u.totalInSet ?? 1), 0),
+      group.length,
+    );
+    totalInSetPatch.set(group[0].id, total);
+    for (let i = 1; i < group.length; i++) removeIds.add(group[i].id);
+  }
+
+  if (removeIds.size === 0) return state;
+
+  return {
+    ...state,
+    units: state.units
+      .filter((u) => !removeIds.has(u.id))
+      .map((u) =>
+        totalInSetPatch.has(u.id)
+          ? { ...u, totalInSet: totalInSetPatch.get(u.id)!, indexInSet: 1 }
+          : u,
+      ),
+  };
+}
+
 /** Demo grindų zonos — 8–11 giliai į aisle (beveik iki pusės) pagal foto/video */
 export function defaultFloorAreas(): FloorArea[] {
   const now = new Date().toISOString();
@@ -158,7 +199,7 @@ export function loadState(): AppState {
       fresh.floorAreas = defaultFloorAreas();
       return fresh;
     }
-    const parsed = JSON.parse(raw) as AppState;
+    let parsed = JSON.parse(raw) as AppState;
     if (!parsed.locations?.length) parsed.locations = buildLocations();
     if (!parsed.floorAreas) parsed.floorAreas = [];
     // Refresh demo floor seeds (v2 = deep 8–11 protrusion) if only seeds present
@@ -181,6 +222,15 @@ export function loadState(): AppState {
       }
     }
     parsed.units = (parsed.units ?? []).map(migrateUnit);
+    const consolidated = consolidateDuplicatePlacedUnits(parsed);
+    if (consolidated !== parsed) {
+      parsed = consolidated;
+      try {
+        localStorage.setItem(KEY, JSON.stringify(parsed));
+      } catch {
+        /* ignore */
+      }
+    }
     parsed.orders = (parsed.orders ?? []).map((o) => ({
       ...o,
       qrToken:
@@ -277,29 +327,31 @@ export function createOrderFromParsed(
     (occupyAll ? null : span === "half" ? (half === "R" ? 0.35 : -0.35) : 0);
   const fpZ = place?.footprintOffsetZ ?? (occupyAll ? null : 0);
 
-  const units: Unit[] = Array.from({ length: Math.max(1, colli) }, (_, i) => ({
-    id: uuid(),
-    orderId: order.id,
-    shipmentId: shipment.id,
-    locationId: placeNow && locId ? locId : null,
-    occupiesEntireRack: occupyAll,
-    slotSpan: occupyAll ? "full" : span,
-    slotHalf: occupyAll ? null : half,
-    footprintW: occupyAll ? null : fpW,
-    footprintD: occupyAll ? null : fpD,
-    footprintOffsetX: occupyAll ? null : fpX,
-    footprintOffsetZ: occupyAll ? null : fpZ,
-    floorAreaId: placeNow && floorId ? floorId : null,
-    kind: "box" as const,
-    indexInSet: i + 1,
-    totalInSet: Math.max(1, colli),
-    qrToken: uuid().replace(/-/g, "").slice(0, 16),
-    labelTitle: doc.project || doc.orderCode || doc.client || "Siunta",
-    status: (placeNow ? "stored" : "expected") as UnitStatus,
-    notes: doc.lines.map((l) => `${l.name} ×${l.qty}`).join("; "),
-    createdAt: now,
-    updatedAt: now,
-  }));
+  const units: Unit[] = [
+    {
+      id: uuid(),
+      orderId: order.id,
+      shipmentId: shipment.id,
+      locationId: placeNow && locId ? locId : null,
+      occupiesEntireRack: occupyAll,
+      slotSpan: occupyAll ? "full" : span,
+      slotHalf: occupyAll ? null : half,
+      footprintW: occupyAll ? null : fpW,
+      footprintD: occupyAll ? null : fpD,
+      footprintOffsetX: occupyAll ? null : fpX,
+      footprintOffsetZ: occupyAll ? null : fpZ,
+      floorAreaId: placeNow && floorId ? floorId : null,
+      kind: "box" as const,
+      indexInSet: 1,
+      totalInSet: Math.max(1, colli),
+      qrToken: uuid().replace(/-/g, "").slice(0, 16),
+      labelTitle: doc.project || doc.orderCode || doc.client || "Siunta",
+      status: (placeNow ? "stored" : "expected") as UnitStatus,
+      notes: doc.lines.map((l) => `${l.name} ×${l.qty}`).join("; "),
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
 
   let floorAreas = state.floorAreas;
   if (placeNow && floorId) {
@@ -1439,7 +1491,10 @@ export function searchInventory(
       orderCode: order.orderCode,
       project: order.project,
       client: order.client,
-      label: unit.labelTitle,
+      label:
+        unit.totalInSet > 1
+          ? `${unit.labelTitle} (${unit.totalInSet} dėž.)`
+          : unit.labelTitle,
       manufacturer,
       locationLabel,
       locationCode,

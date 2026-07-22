@@ -8,6 +8,7 @@ import {
   deleteFloorArea,
   loadState,
 } from "@/lib/demo-store";
+import { formatOrderOption } from "@/lib/ui-labels";
 import { useWms } from "@/lib/use-wms";
 
 export type FloorDraft = {
@@ -145,7 +146,7 @@ export function FloorAreaModal({
                 )}
                 {activeOrders.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {o.project || o.orderCode || o.client || o.id.slice(0, 8)}
+                    {formatOrderOption(o)}
                   </option>
                 ))}
               </select>

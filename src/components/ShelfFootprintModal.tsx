@@ -7,6 +7,7 @@ import {
   loadState,
 } from "@/lib/demo-store";
 import { locationCode, zoneForRack } from "@/lib/locations";
+import { formatOrderOption } from "@/lib/ui-labels";
 import { useWms } from "@/lib/use-wms";
 import type { PrefillLocation } from "@/components/NewShipmentModal";
 
@@ -205,7 +206,7 @@ export function ShelfFootprintModal({
                 )}
                 {activeOrders.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {o.project || o.orderCode || o.client || o.id.slice(0, 8)}
+                    {formatOrderOption(o)}
                   </option>
                 ))}
               </select>
