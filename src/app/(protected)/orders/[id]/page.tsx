@@ -13,6 +13,7 @@ import {
 import { useWms } from "@/lib/use-wms";
 import { formatOrderQty } from "@/lib/labels";
 import { unitStatusLabel } from "@/lib/ui-labels";
+import { OrderInfoSection } from "@/components/OrderInfoSection";
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -147,6 +148,8 @@ export default function OrderDetailPage() {
         </button>
       </div>
 
+      <OrderInfoSection orderId={order.id} id="info" />
+
       <div className="rounded-xl border bg-white p-4">
         <h2 className="font-semibold">Dėžės ir paletės</h2>
         <ul className="mt-2 divide-y text-sm">
@@ -161,6 +164,11 @@ export default function OrderDetailPage() {
                   <div className="text-stone-500">
                     {unitStatusLabel(u.status)} · {loc?.label ?? loc?.code ?? "dar nepadėta"}
                   </div>
+                  {u.notes?.trim() && (
+                    <p className="mt-1 text-xs text-stone-600 whitespace-pre-wrap">
+                      {u.notes}
+                    </p>
+                  )}
                 </div>
                 <select
                   className="field !min-h-11 !py-2 text-sm sm:!min-h-0 sm:w-auto"

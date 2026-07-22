@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { MobileCardList, MobileCardRow } from "@/components/MobileCardList";
 import {
   ComboField,
@@ -11,8 +11,10 @@ import {
 } from "@/components/ui/FormFields";
 import { HintLabel } from "@/components/ui/HintLabel";
 import { getFormSuggestions, searchInventory } from "@/lib/demo-store";
+import { orderDetailSummary } from "@/lib/order-info";
 import { useWms } from "@/lib/use-wms";
 import { unitStatusLabel } from "@/lib/ui-labels";
+import { OrderInfoSection } from "@/components/OrderInfoSection";
 
 export default function SearchPage() {
   const state = useWms();
@@ -28,6 +30,7 @@ export default function SearchPage() {
   const [arrivedTo, setArrivedTo] = useState("");
   const [issuedFrom, setIssuedFrom] = useState("");
   const [issuedTo, setIssuedTo] = useState("");
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
   const combinedQuery = useMemo(() => {
     return [project, client, orderCode, query].filter(Boolean).join(" ");
@@ -172,9 +175,14 @@ export default function SearchPage() {
         </div>
 
         <MobileCardList>
-          {results.map((r) => (
+          {results.map((r, idx) => {
+            const summary = orderDetailSummary(state, r.orderId);
+            const expanded = expandedOrderId === r.orderId;
+            const isFirstOfOrder =
+              results.findIndex((x) => x.orderId === r.orderId) === idx;
+            return (
+            <div key={r.unitId} className="border-b border-stone-100 last:border-0">
             <MobileCardRow
-              key={r.unitId}
               title={r.label}
               subtitle={[r.project, r.client].filter(Boolean).join(" · ")}
               meta={
@@ -190,10 +198,24 @@ export default function SearchPage() {
                       </span>
                     )}
                   </p>
+                  {summary && !expanded && (
+                    <p className="mt-2 line-clamp-2 text-xs text-stone-600">
+                      {summary}
+                    </p>
+                  )}
                 </>
               }
               actions={
                 <>
+                  <button
+                    type="button"
+                    className="btn-secondary !text-xs"
+                    onClick={() =>
+                      setExpandedOrderId(expanded ? null : r.orderId)
+                    }
+                  >
+                    {expanded ? "Sutraukti" : "Info"}
+                  </button>
                   <button
                     type="button"
                     className="btn-primary !text-xs"
@@ -209,7 +231,7 @@ export default function SearchPage() {
                     Sandėlyje
                   </button>
                   <Link
-                    href={`/orders/${r.orderId}`}
+                    href={`/orders/${r.orderId}#info`}
                     className="btn-secondary !text-xs"
                   >
                     Užsakymas
@@ -217,7 +239,14 @@ export default function SearchPage() {
                 </>
               }
             />
-          ))}
+            {expanded && isFirstOfOrder && (
+              <div className="px-4 pb-4">
+                <OrderInfoSection orderId={r.orderId} className="!shadow-none" />
+              </div>
+            )}
+            </div>
+          );
+          })}
           {results.length === 0 && (
             <p className="px-4 py-10 text-center text-sm text-stone-500">
               Nieko nerasta — pabandyk kitus filtrus
@@ -238,9 +267,13 @@ export default function SearchPage() {
               </tr>
             </thead>
             <tbody>
-              {results.map((r) => (
-                <tr
-                  key={r.unitId}
+              {results.map((r, idx) => {
+                const summary = orderDetailSummary(state, r.orderId);
+                const expanded = expandedOrderId === r.orderId;
+                const isFirstOfOrder =
+                  results.findIndex((x) => x.orderId === r.orderId) === idx;
+                return (
+                <Fragment key={r.unitId}>
                   className="border-t border-stone-100 hover:bg-stone-50/80"
                 >
                   <td className="px-4 py-3">
@@ -248,6 +281,11 @@ export default function SearchPage() {
                       {r.project || "—"}
                     </p>
                     <p className="text-xs text-stone-500">{r.client || "—"}</p>
+                    {summary && !expanded && (
+                      <p className="mt-1 line-clamp-2 text-xs text-stone-600">
+                        {summary}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-stone-800">{r.label}</td>
                   <td className="px-4 py-3 font-mono text-xs text-stone-600">
@@ -270,6 +308,15 @@ export default function SearchPage() {
                         type="button"
                         className="btn-secondary !px-2.5 !py-1.5 !text-xs"
                         onClick={() =>
+                          setExpandedOrderId(expanded ? null : r.orderId)
+                        }
+                      >
+                        {expanded ? "Sutraukti" : "Info"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary !px-2.5 !py-1.5 !text-xs"
+                        onClick={() =>
                           showOnMap(
                             r.rack,
                             r.unitId,
@@ -281,7 +328,7 @@ export default function SearchPage() {
                         Rodyti sandėlyje
                       </button>
                       <Link
-                        href={`/orders/${r.orderId}`}
+                        href={`/orders/${r.orderId}#info`}
                         className="btn-secondary !px-2.5 !py-1.5 !text-xs"
                       >
                         Užsakymas
@@ -289,7 +336,16 @@ export default function SearchPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                {expanded && isFirstOfOrder && (
+                  <tr key={`${r.unitId}-info`} className="border-t border-stone-100 bg-stone-50/50">
+                    <td colSpan={6} className="px-4 py-3">
+                      <OrderInfoSection orderId={r.orderId} className="!border-0 !bg-transparent !p-0" />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
+              );
+              })}
               {results.length === 0 && (
                 <tr>
                   <td
