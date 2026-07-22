@@ -1,0 +1,3 @@
+-- Po fizinio reset: paleisk seed_locations.sql dar kartą
+-- arba atnaujink konkrečias eilutes pagal atsiųstą schemą.
+-- Smulkūs 15/16 tunelis: DILED-15/16-A-* (prie sienos), DILED-15/16-B-* (vidus).

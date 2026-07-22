@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 580" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="1200" height="580" fill="#f7f4ef"/>
+  <text x="600" y="24" text-anchor="middle" font-size="19" font-weight="700" fill="#1a1a1a">Sand?lio br?ùinys ù stelaùai 1ù18</text>
+  <text x="600" y="44" text-anchor="middle" font-size="11" fill="#555">~29ù30 ù ~11 m ù raudona 2.9ù1.5ù1.9 ù m?lyna 1.9ù1.5ù1.8 ù pra?jim? smulk?s prie sien?</text>
+
+  <!-- Building outer wall -->
+  <rect x="60" y="60" width="1080" height="420" fill="#fff" stroke="#222" stroke-width="3"/>
+
+  <text x="600" y="56" text-anchor="middle" font-size="11" font-weight="700" fill="#333">? ~29ù30 m ?</text>
+  <text x="32" y="280" text-anchor="middle" font-size="11" font-weight="700" fill="#333" transform="rotate(-90 32 280)">~11 m</text>
+
+  <!-- ===== TOP WALL racks ===== -->
+  <g font-size="14" font-weight="700" text-anchor="middle">
+    <rect x="150" y="72" width="52" height="52" rx="2" fill="#b8d4f0" stroke="#1e3a5f" stroke-width="2"/><text x="176" y="104" fill="#102a44">7</text>
+    <rect x="202" y="72" width="52" height="52" rx="2" fill="#b8d4f0" stroke="#1e3a5f" stroke-width="2"/><text x="228" y="104" fill="#102a44">8</text>
+    <rect x="254" y="72" width="80" height="52" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="294" y="104" fill="#3a1010">9</text>
+    <rect x="334" y="72" width="80" height="52" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="374" y="104" fill="#3a1010">10</text>
+    <rect x="414" y="72" width="80" height="52" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="454" y="104" fill="#3a1010">11</text>
+    <rect x="494" y="72" width="80" height="52" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="534" y="104" fill="#3a1010">12</text>
+    <rect x="584" y="72" width="64" height="52" fill="#e9eef5" stroke="#2a6fdb" stroke-width="2.5"/>
+    <text x="616" y="95" fill="#1a4a9a" font-size="12">EXIT</text>
+    <text x="616" y="110" fill="#2a6fdb" font-size="8" font-weight="600">durys</text>
+    <rect x="658" y="72" width="52" height="52" rx="2" fill="#b8d4f0" stroke="#1e3a5f" stroke-width="2"/><text x="684" y="104" fill="#102a44">13</text>
+    <rect x="710" y="72" width="80" height="52" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="750" y="104" fill="#3a1010">14</text>
+    <rect x="790" y="72" width="80" height="52" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="830" y="104" fill="#3a1010">15</text>
+  </g>
+
+  <!-- ===== LEFT pra?jimas 6?7: smulk?s PRIE SIENOS, tada pra?jimas ===== -->
+  <!-- Outer wall is at x=60. Small racks flush against left wall -->
+  <rect x="68" y="140" width="36" height="220" fill="#d5cec0" stroke="#555" stroke-width="1.5"/>
+  <text x="86" y="160" text-anchor="middle" font-size="8" font-weight="700" fill="#333" transform="rotate(-90 86 250)">smulk?s prie sienos</text>
+  <g font-size="8" font-weight="700" text-anchor="middle" fill="#222">
+    <rect x="72" y="175" width="28" height="32" fill="#cfc6b6" stroke="#444"/><text x="86" y="195">S1</text>
+    <rect x="72" y="212" width="28" height="32" fill="#cfc6b6" stroke="#444"/><text x="86" y="232">S2</text>
+    <rect x="72" y="249" width="28" height="32" fill="#cfc6b6" stroke="#444"/><text x="86" y="269">S3</text>
+    <rect x="72" y="286" width="28" height="32" fill="#cfc6b6" stroke="#444"/><text x="86" y="306">S4</text>
+  </g>
+  <!-- walkway next to them -->
+  <rect x="104" y="140" width="36" height="220" fill="#fff8e0" stroke="#c4a035" stroke-width="1" stroke-dasharray="4 2"/>
+  <text x="122" y="255" text-anchor="middle" font-size="9" font-weight="700" fill="#6b5200" transform="rotate(-90 122 255)">pra?jimas 6?7</text>
+
+  <!-- ===== RIGHT 15?16 TUNNEL: siena | smulk?s | pra?jimas | smulk?s ===== -->
+  <!-- Against right outer wall (x=1140) -->
+  <rect x="1096" y="140" width="36" height="220" fill="#d5cec0" stroke="#555" stroke-width="1.5"/>
+  <text x="1114" y="155" text-anchor="middle" font-size="8" font-weight="700" fill="#333">prie</text>
+  <text x="1114" y="167" text-anchor="middle" font-size="8" font-weight="700" fill="#333">sienos</text>
+  <g font-size="8" font-weight="700" text-anchor="middle" fill="#222">
+    <rect x="1100" y="175" width="28" height="32" fill="#cfc6b6" stroke="#444"/><text x="1114" y="195">A1</text>
+    <rect x="1100" y="212" width="28" height="32" fill="#cfc6b6" stroke="#444"/><text x="1114" y="232">A2</text>
+    <rect x="1100" y="249" width="28" height="32" fill="#cfc6b6" stroke="#444"/><text x="1114" y="269">A3</text>
+    <rect x="1100" y="286" width="28" height="32" fill="#cfc6b6" stroke="#444"/><text x="1114" y="306">A4</text>
+  </g>
+  <!-- tunnel passage -->
+  <rect x="1054" y="140" width="42" height="220" fill="#fff8e0" stroke="#c4a035" stroke-width="1.5" stroke-dasharray="4 2"/>
+  <text x="1075" y="240" text-anchor="middle" font-size="9" font-weight="700" fill="#6b5200" transform="rotate(-90 1075 250)">tunelis / pra?jimas</text>
+  <text x="1075" y="300" text-anchor="middle" font-size="8" fill="#6b5200" transform="rotate(-90 1075 320)">15 ? 16</text>
+  <!-- second row of small racks (inner side of tunnel) -->
+  <rect x="1012" y="140" width="42" height="220" fill="#d5cec0" stroke="#555" stroke-width="1.5"/>
+  <text x="1033" y="158" text-anchor="middle" font-size="8" font-weight="700" fill="#333">smulk?s</text>
+  <g font-size="8" font-weight="700" text-anchor="middle" fill="#222">
+    <rect x="1018" y="175" width="30" height="32" fill="#cfc6b6" stroke="#444"/><text x="1033" y="195">B1</text>
+    <rect x="1018" y="212" width="30" height="32" fill="#cfc6b6" stroke="#444"/><text x="1033" y="232">B2</text>
+    <rect x="1018" y="249" width="30" height="32" fill="#cfc6b6" stroke="#444"/><text x="1033" y="269">B3</text>
+    <rect x="1018" y="286" width="30" height="32" fill="#cfc6b6" stroke="#444"/><text x="1033" y="306">B4</text>
+  </g>
+  <!-- bracket label for tunnel -->
+  <text x="1075" y="375" text-anchor="middle" font-size="9" font-weight="700" fill="#6b5200">siena ? smulk?s ? pra?jimas ? smulk?s</text>
+
+  <!-- CENTER -->
+  <text x="560" y="220" text-anchor="middle" font-size="16" font-weight="700" fill="#5a6a7a">CENTRAS ù grindys kuo laisvesn?s</text>
+  <text x="360" y="250" text-anchor="middle" font-size="12" font-weight="700" fill="#2d5a2a">EXPO (kaire, 1ù12)</text>
+  <text x="780" y="250" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a5f">DILED (desine, 13ù18)</text>
+
+  <!-- STAGING near entrance but not blocking ù slightly into center -->
+  <rect x="560" y="280" width="100" height="44" rx="3" fill="#ffe8a3" stroke="#b08900" stroke-width="1.5"/>
+  <text x="610" y="300" text-anchor="middle" font-size="11" font-weight="700" fill="#6b5200">STAGING</text>
+  <text x="610" y="314" text-anchor="middle" font-size="8" fill="#6b5200">atsiemimui</text>
+
+  <!-- BROKAS ù away from entrance, use space: left-center deeper toward EXIT side -->
+  <rect x="200" y="200" width="100" height="50" rx="3" fill="#f5c6cb" stroke="#8b2942" stroke-width="1.5"/>
+  <text x="250" y="222" text-anchor="middle" font-size="11" font-weight="700" fill="#8b2942">BROKAS</text>
+  <text x="250" y="238" text-anchor="middle" font-size="8" fill="#8b2942">ne prie ieimo</text>
+
+  <!-- LONG = virö EXIT / 3 aukötas (ne grind? plotas) -->
+  <rect x="470" y="128" width="150" height="36" rx="2" fill="#efe8df" stroke="#3d2f24" stroke-width="1" stroke-dasharray="4 2"/>
+  <text x="545" y="143" text-anchor="middle" font-size="10" font-weight="700" fill="#3d2f24">LONG = 3 aukötas</text>
+  <text x="545" y="157" text-anchor="middle" font-size="9" fill="#5a4638">virö EXIT (12ñ13), ne grindyse</text>
+
+  <!-- ===== BOTTOM WALL: continuous 6-1 | IEJIMAS | 18-16 ===== -->
+  <g font-size="14" font-weight="700" text-anchor="middle">
+    <rect x="150" y="385" width="52" height="70" rx="2" fill="#b8d4f0" stroke="#1e3a5f" stroke-width="2"/><text x="176" y="425" fill="#102a44">6</text>
+    <rect x="202" y="385" width="52" height="70" rx="2" fill="#b8d4f0" stroke="#1e3a5f" stroke-width="2"/><text x="228" y="425" fill="#102a44">5</text>
+    <rect x="254" y="385" width="80" height="70" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="294" y="425" fill="#3a1010">4</text>
+    <rect x="334" y="385" width="80" height="70" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="374" y="425" fill="#3a1010">3</text>
+    <rect x="414" y="385" width="80" height="70" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="454" y="425" fill="#3a1010">2</text>
+    <rect x="494" y="385" width="80" height="70" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="534" y="415" fill="#3a1010">1</text>
+    <text x="534" y="432" font-size="8" font-weight="600" fill="#345">2.9ù1.5ù1.9</text>
+    <text x="534" y="444" font-size="8" font-weight="600" fill="#345">prie ieimo</text>
+
+    <rect x="584" y="385" width="64" height="70" fill="#cfe0ff" stroke="#2a6fdb" stroke-width="2.5"/>
+    <text x="616" y="415" fill="#1a4a9a" font-size="11">IEJIMAS</text>
+    <text x="616" y="432" fill="#2a6fdb" font-size="8" font-weight="600">1 ? ? 18</text>
+
+    <rect x="658" y="385" width="52" height="70" rx="2" fill="#b8d4f0" stroke="#1e3a5f" stroke-width="2"/><text x="684" y="425" fill="#102a44">18</text>
+    <rect x="710" y="385" width="80" height="70" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="750" y="425" fill="#3a1010">17</text>
+    <rect x="790" y="385" width="80" height="70" rx="2" fill="#e8a0a0" stroke="#8b2942" stroke-width="2"/><text x="830" y="425" fill="#3a1010">16</text>
+  </g>
+
+  <!-- Small shelves near entrance right ù under/inside big racks area (photo) flush toward wall side of 16-18 zone, not floating center -->
+  <rect x="880" y="385" width="70" height="70" fill="#d5cec0" stroke="#555" stroke-width="1.5"/>
+  <text x="915" y="415" text-anchor="middle" font-size="9" font-weight="700" fill="#333">smulk?s</text>
+  <text x="915" y="430" text-anchor="middle" font-size="8" fill="#555">prie ieimo</text>
+  <text x="915" y="442" text-anchor="middle" font-size="8" fill="#555">desin?je</text>
+
+  <!-- Legend -->
+  <g font-size="11" fill="#222">
+    <rect x="70" y="505" width="18" height="14" fill="#e8a0a0" stroke="#8b2942"/><text x="96" y="516">Raudona 2.9 ù 1ù4, 9ù12, 14ù15, 16ù17</text>
+    <rect x="380" y="505" width="18" height="14" fill="#b8d4f0" stroke="#1e3a5f"/><text x="406" y="516">M?lyna 1.9 ù 5ù8, 13, 18</text>
+    <rect x="640" y="505" width="18" height="14" fill="#d5cec0" stroke="#555"/><text x="666" y="516">Smulk?s prie sienos</text>
+    <rect x="820" y="505" width="18" height="14" fill="#f5c6cb" stroke="#8b2942"/><text x="846" y="516">BROKAS (giliau, ne prie dur?)</text>
+  </g>
+  <text x="600" y="548" text-anchor="middle" font-size="11" fill="#444">Desin? 15ù16: siena ? smulk?s ? pra?jimo tunelis ? smulk?s ù K/D + aukùtas tik sistemoje</text>
+</svg>
