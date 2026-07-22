@@ -198,7 +198,7 @@ export function saveState(state: AppState) {
   window.dispatchEvent(new Event("wms-updated"));
 }
 
-export function useWmsSubscribe(cb: () => void) {
+export function subscribeWms(cb: () => void) {
   if (typeof window === "undefined") return () => {};
   const handler = () => cb();
   window.addEventListener("wms-updated", handler);
@@ -1339,10 +1339,6 @@ export interface InventorySearchResult {
   issuedAt: string | null;
 }
 
-function parseDateOnly(iso: string | null): string | null {
-  if (!iso) return null;
-  return iso.slice(0, 10);
-}
 
 function inDateRange(
   value: string | null,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { loadState, useWmsSubscribe } from "@/lib/demo-store";
+import { loadState, subscribeWms } from "@/lib/demo-store";
 import type { AppState } from "@/lib/types";
 
 export function useWms(): AppState {
@@ -19,7 +19,7 @@ export function useWms(): AppState {
 
   useEffect(() => {
     setState(loadState());
-    return useWmsSubscribe(() => setState(loadState()));
+    return subscribeWms(() => setState(loadState()));
   }, []);
 
   return state;

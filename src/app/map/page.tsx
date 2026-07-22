@@ -64,7 +64,6 @@ function MapInner() {
   const [floorDraft, setFloorDraft] = useState<FloorDraft | null>(null);
   const [shelfDraft, setShelfDraft] = useState<ShelfDraft | null>(null);
   const [highlightRack, setHighlightRack] = useState<number | null>(null);
-  const [highlightUnitId, setHighlightUnitId] = useState<string | null>(null);
   const [hintText, setHintText] = useState<string | null>(null);
   const canvasRef = useRef<Warehouse3DHandle>(null);
 
@@ -72,10 +71,8 @@ function MapInner() {
     rack: number,
     code?: string | null,
     reason?: string,
-    unitId?: string | null,
   ) {
     setHighlightRack(rack);
-    if (unitId) setHighlightUnitId(unitId);
     setHintText(
       reason ||
         (code ? `Vieta: ${code}` : `Stelažas ${rack}`),
@@ -83,7 +80,6 @@ function MapInner() {
     window.setTimeout(() => canvasRef.current?.focusRack(rack), 120);
     window.setTimeout(() => {
       setHighlightRack(null);
-      setHighlightUnitId(null);
       setHintText(null);
     }, 12000);
   }
@@ -122,7 +118,6 @@ function MapInner() {
             rack,
             params.get("code") || loc?.code,
             label ? `Radai: ${label}` : `Radai prekę`,
-            unitRaw,
           );
         } else if (label) {
           setHintText(`Radai: ${label} (vieta ant grindų)`);

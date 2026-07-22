@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, type ThreeEvent, useThree } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { CameraControls, Text } from "@react-three/drei";
 import {
   Component,
@@ -104,7 +104,6 @@ const WALL_H = 4.2;
 /** Beveik visas bay gylis (~1.5 m) ir plotis — galima žymėti iki krašto */
 const DECK_W_FRAC = 0.98;
 const DECK_D_FRAC = 0.98;
-const RACK_DEPTH_M = 1.5;
 
 const PRESETS: Record<
   ViewPreset,
