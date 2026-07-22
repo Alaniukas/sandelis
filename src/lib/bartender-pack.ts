@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import { readFile } from "fs/promises";
 import path from "path";
 import type { OrderLabelData } from "./labels";
+import { buildQrPdf } from "./qr-pdf";
 
 function xmlEscape(s: string): string {
   return String(s)
@@ -29,9 +30,6 @@ export function buildBtxml(label: OrderLabelData, copies = 1): string {
       </NamedSubString>
       <NamedSubString Name="atvykimo data">
         <Value>${xmlEscape(label.data)}</Value>
-      </NamedSubString>
-      <NamedSubString Name="QR">
-        <Value>${xmlEscape(label.qr)}</Value>
       </NamedSubString>
       <PrintSetup>
         <IdenticalCopiesOfLabel>${Math.max(1, copies)}</IdenticalCopiesOfLabel>
@@ -144,30 +142,73 @@ Write-Host "Nepavyko. Patikrink sablona BarTender." -ForegroundColor Red
 Read-Host "Enter"
 `;
 
-const READ_ME = `SANDĖLIO LIPDUKAS — BarTender
-=============================
+const READ_ME = `SANDĖLIO LIPDUKAI — BarTender + QR
+===================================
 
-VIENKARTINIS SETUP (BarTender Designer):
-  1. Atidaryk sablonas.btw
-  2. Kiekvienam tekstui: duomenų šaltinis = Named SubString
-     Pavadinimai: Kodas | Objektas | Kiek deziu paleciu | atvykimo data
-  3. QR barkodas → Named SubString „QR“
-  4. ARBA: Database → Text File → duomenys.csv (kabliataškis)
-  5. Išsaugok sablonas.btw
+KAS ČIA YRA
+-----------
+Šiame ZIP yra du skirtingi spausdinimai:
 
-KASDIEN:
-  1. Iš WMS atsisiunti ZIP → išarchyvuoti (pvz. Desktop\\lipdukas)
-  2. Dukart spustelėti „spausdinti.bat“
-  3. Įvesti kopijų skaičių → spausdina automatiškai
+  1. LIPDUKAS (90×60 mm) — spausdinamas per BarTender iš sablonas.btw
+     Rodo: užsakymo kodą, objektą, kiekį, atvykimo datą.
+     QR KODO ANT ŠIO LIPDUKO NĖRA — per mažas formatas.
 
-Failai:
-  sablonas.btw   — tavo dizainas (90×60 mm)
-  duomenys.csv   — šio užsakymo duomenys (1 eilutė)
+  2. QR LAPAS (qr.pdf) — A4 formatas, didelis QR kodas puslapio centre
+     Atidaryk qr.pdf ir atspausdink įprastu A4 popieriumi (1 lapas).
+     Iškirpk QR dalį arba priklijuok visą lapą prie paletės / dėžės.
+     Nuskenuojant telefonu — atsidaro užsakymo informacija sandėlyje.
+
+
+A. VIENKARTINIS SETUP (BarTender Designer)
+------------------------------------------
+Atlik vieną kartą, kol šablonas paruoštas. Vėliau pakartoti nereikia.
+
+  1. Atidaryk sablonas.btw BarTender Designer programoje.
+
+  2. Kiekvienam teksto laukui nustatyk duomenų šaltinį:
+     Dešiniu pelės klavišu ant teksto → Properties → Data Source → Named SubString
+
+  3. Susiek laukus pagal šią lentelę (pavadinimai turi sutapti TIKSLIAI):
+
+     | Kas rodoma lipduke      | Named SubString pavadinimas |
+     |-------------------------|-----------------------------|
+     | Užsakymo kodas          | Kodas                       |
+     | Objektas / projektas    | Objektas                    |
+     | Kiek dėžių / palečių    | Kiek deziu paleciu          |
+     | Atvykimo data           | atvykimo data               |
+
+  4. Jei lipduke buvo QR kodas — PAŠALINK jį iš šablono.
+     QR spausdinamas atskirai iš qr.pdf (žr. skyrių B).
+
+  5. (Alternatyva) Vietoj Named SubString gali naudoti CSV:
+     Database → Text File → pasirink duomenys.csv (skyriklis: kabliataškis ;)
+
+  6. Išsaugok sablonas.btw tame pačiame aplanke kaip ir kiti ZIP failai.
+
+
+B. KASDIENINIS DARBAS
+---------------------
+Kiekvienam naujam užsakymui:
+
+  1. WMS sistemoje atsisiųsk ZIP failą ir išarchyvuok į aplanką
+     (pvz. Darbalaukis\\lipdukas-ABC123).
+
+  2. LIPDUKAMS: dukart spustelėk spausdinti.bat
+     → įvesk kiek identiškų lipdukų reikia → spausdina automatiškai.
+
+  3. QR KODUI: atidaryk qr.pdf ir atspausdink į A4 (1 ar daugiau kopijų).
+     Priklijuok prie paletės ar dėžės — QR didelis, lengvai nuskenuojamas.
+
+
+FAILAI ŠIAME APLANKE
+--------------------
+  sablonas.btw   — BarTender šablonas (90×60 mm, be QR)
+  duomenys.csv   — šio užsakymo duomenys (1 eilutė, kabliataškis)
   uzduotis.xml   — BarTender skriptas su įrašytais laukais
+  qr.pdf         — QR kodas A4 lape (atskirai spausdinti ir priklijuoti)
   spausdinti.bat — paleidžia BarTender (rekomenduojama)
   spausdinti.ps1 — tas pats per PowerShell
-
-QR nuoroda veda į užsakymo info telefone (/o/...).
+  SKAITYK.txt    — šios instrukcijos
 `;
 
 export async function buildBarTenderZip(
@@ -182,10 +223,13 @@ export async function buildBarTenderZip(
   );
   const template = await readFile(templatePath);
 
+  const qrPdf = await buildQrPdf(label);
+
   const zip = new JSZip();
   zip.file("sablonas.btw", template);
   zip.file("duomenys.csv", csv);
   zip.file("uzduotis.xml", buildBtxml(label, 1));
+  zip.file("qr.pdf", qrPdf);
   zip.file("spausdinti.bat", SPAUSDINTI_BAT);
   zip.file("spausdinti.ps1", SPAUSDINTI_PS1);
   zip.file("SKAITYK.txt", READ_ME);

@@ -78,6 +78,8 @@ export interface Unit {
   orderId: string;
   shipmentId: string | null;
   locationId: string | null;
+  /** Paskutinė vieta prieš perkėlimą į išvežimą */
+  previousLocationId?: string | null;
   /** Jei true — unitas užima visą stelažą (visus K/D × aukštus) */
   occupiesEntireRack: boolean;
   /** @deprecated — naudok footprint*; laikoma migracijai */

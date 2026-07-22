@@ -25,6 +25,16 @@ export default function OrderQrPage() {
     [state.shipments, order],
   );
 
+  const mapUnit = useMemo(() => {
+    return (
+      units.find(
+        (u) =>
+          u.locationId &&
+          ["stored", "received", "staged"].includes(u.status),
+      ) ?? units[0]
+    );
+  }, [units]);
+
   const locations = useMemo(() => {
     const codes = new Set<string>();
     for (const u of units) {
@@ -151,11 +161,22 @@ export default function OrderQrPage() {
           >
             Atidaryti užsakymą
           </Link>
-          {locations.length > 0 && (
+          {mapUnit && (
             <button
               type="button"
               className="font-medium text-blue-800 underline"
-              onClick={() => router.push(`/map?order=${order.id}&hint=1`)}
+              onClick={() => {
+                const loc = mapUnit.locationId
+                  ? state.locations.find((l) => l.id === mapUnit.locationId)
+                  : null;
+                const params = new URLSearchParams({
+                  unit: mapUnit.id,
+                  hint: "1",
+                });
+                if (loc?.rack != null) params.set("rack", String(loc.rack));
+                if (loc?.code) params.set("code", loc.code);
+                router.push(`/map?${params.toString()}`);
+              }}
             >
               Rodyti sandėlyje
             </button>

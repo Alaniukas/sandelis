@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useThree } from "@react-three/fiber";
-import { CameraControls, Text } from "@react-three/drei";
+import { CameraControls, Text, Billboard } from "@react-three/drei";
 import {
   Component,
   type ReactNode,
@@ -21,10 +21,11 @@ import {
   getSmallShelfLayout,
   locationCode,
   ROOM,
+  BAY_DEPTH_M,
   type RackBox,
   type SmallShelfBox,
 } from "@/lib/locations";
-import type { AppState, FloorArea } from "@/lib/types";
+import type { AppState, FloorArea, Unit } from "@/lib/types";
 import {
   rackFill,
   rackFullyOccupiedByUnit,
@@ -45,6 +46,7 @@ import {
   type FootprintPulse,
   type MapFocus,
 } from "@/lib/map-focus";
+import { unitShortLabel } from "@/lib/ui-labels";
 
 export type PickInfo = {
   code: string;
@@ -57,6 +59,8 @@ export type PickInfo = {
   /** Preferuojamas plotas: full / half (iš click) */
   slotSpan?: "full" | "half";
   label?: string;
+  /** Paspausta konkreti prekė 3D */
+  unitId?: string;
 };
 
 export type ViewPreset =
@@ -110,7 +114,7 @@ const CZ = ROOM.width / 2;
 const WALL_H = 4.2;
 /** Beveik visas bay gylis (~1.5 m) ir plotis — galima žymėti iki krašto */
 const DECK_W_FRAC = 0.98;
-const DECK_D_FRAC = 0.98;
+const DECK_D_FRAC = 1;
 
 const PRESETS: Record<
   ViewPreset,
@@ -165,6 +169,139 @@ function FocusPulse({ w, d, y = 0.05 }: { w: number; d: number; y?: number }) {
         depthWrite={false}
       />
     </mesh>
+  );
+}
+
+type FootprintDraw = {
+  level: number;
+  offsetX: number;
+  offsetZ: number;
+  w: number;
+  d: number;
+  label: string;
+  unitId: string;
+  code: string;
+  kind: "pallet" | "small_shelf";
+  rack?: number;
+  side?: "K" | "D";
+};
+
+function footprintPick(f: FootprintDraw): PickInfo {
+  return {
+    code: f.code,
+    kind: f.kind,
+    rack: f.rack,
+    level: f.level,
+    side: f.side,
+    label: f.label,
+    unitId: f.unitId,
+  };
+}
+
+function CargoHitTarget({
+  w,
+  d,
+  h,
+  onPick,
+}: {
+  w: number;
+  d: number;
+  h: number;
+  onPick: () => void;
+}) {
+  return (
+    <mesh
+      position={[0, h * 0.5 + 0.2, 0]}
+      onClick={(e) => {
+        e.stopPropagation();
+        onPick();
+      }}
+      onPointerOver={() => {
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = "default";
+      }}
+    >
+      <boxGeometry args={[Math.max(0.35, w * 1.05), h + 0.55, Math.max(0.35, d * 1.05)]} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+    </mesh>
+  );
+}
+
+function GoodsLabel({
+  text,
+  y = 0.5,
+  onPick,
+}: {
+  text: string;
+  y?: number;
+  onPick?: () => void;
+}) {
+  const t = text.trim();
+  if (!t) return null;
+  const plateW = Math.min(2.4, Math.max(0.9, t.length * 0.062 + 0.35));
+  return (
+    <Billboard
+      position={[0, y, 0]}
+      onClick={
+        onPick
+          ? (e) => {
+              e.stopPropagation();
+              onPick();
+            }
+          : undefined
+      }
+      onPointerOver={
+        onPick
+          ? () => {
+              document.body.style.cursor = "pointer";
+            }
+          : undefined
+      }
+      onPointerOut={
+        onPick
+          ? () => {
+              document.body.style.cursor = "default";
+            }
+          : undefined
+      }
+    >
+      <mesh
+        position={[0, 0, -0.02]}
+        renderOrder={998}
+        onClick={
+          onPick
+            ? (e) => {
+                e.stopPropagation();
+                onPick();
+              }
+            : undefined
+        }
+      >
+        <planeGeometry args={[plateW, 0.24]} />
+        <meshBasicMaterial
+          color="#0f172a"
+          transparent
+          opacity={0.88}
+          depthWrite={false}
+        />
+      </mesh>
+      <Text
+        position={[0, 0, 0.01]}
+        fontSize={0.105}
+        color="#fef08a"
+        anchorX="center"
+        anchorY="middle"
+        outlineWidth={0.025}
+        outlineColor="#000000"
+        maxWidth={plateW - 0.12}
+        renderOrder={999}
+        depthOffset={-2}
+      >
+        {t}
+      </Text>
+    </Billboard>
   );
 }
 
@@ -671,6 +808,8 @@ function Walls({ doors, maps }: { doors: ReturnType<typeof getDoorGaps>; maps: M
 
 function FloorAreas({
   areas,
+  units,
+  orders,
   selectedCode,
   onSelect,
   markMode,
@@ -678,6 +817,8 @@ function FloorAreas({
   focusPulse,
 }: {
   areas: FloorArea[];
+  units: Unit[];
+  orders: AppState["orders"];
   selectedCode: string | null;
   onSelect: (info: PickInfo) => void;
   markMode: boolean;
@@ -685,6 +826,18 @@ function FloorAreas({
   focusPulse?: FootprintPulse | null;
 }) {
   const skipRef = useSkipRaycastWhen(markMode);
+  const unitsByFloor = useMemo(() => {
+    const m = new Map<string, Unit[]>();
+    for (const u of units) {
+      if (!u.floorAreaId) continue;
+      if (!["stored", "received", "staged"].includes(u.status)) continue;
+      const list = m.get(u.floorAreaId) ?? [];
+      list.push(u);
+      m.set(u.floorAreaId, list);
+    }
+    return m;
+  }, [units]);
+
   return (
     <group ref={skipRef}>
       {areas.map((a) => {
@@ -695,7 +848,8 @@ function FloorAreas({
           focusPulse &&
           !focusPulse.rack &&
           !focusPulse.smallCode;
-        const hasGoods = !!a.orderId || a.notes.includes("seed");
+        const floorUnits = unitsByFloor.get(a.id) ?? [];
+        const hasGoods = floorUnits.length > 0;
         return (
           <group key={a.id} position={[lx, 0, lz]}>
             {focused && (
@@ -726,41 +880,43 @@ function FloorAreas({
               <meshStandardMaterial
                 color={selected ? "#f0c14a" : hasGoods ? COLORS.floorGoods : COLORS.floorMark}
                 transparent
-                opacity={0.5}
+                opacity={hasGoods ? 0.5 : 0.28}
                 depthWrite={false}
               />
             </mesh>
-            {hasGoods && (
-              <>
-                {/* Deep aisle stacks — multiple piles, tall (8–11 foto) */}
-                <mesh position={[-a.w * 0.18, 0.08, -a.d * 0.15]} castShadow>
-                  <boxGeometry args={[Math.min(a.w * 0.4, 0.95), 0.1, Math.min(a.d * 0.35, 1.1)]} />
-                  <meshStandardMaterial color={COLORS.pallet} roughness={0.9} />
-                </mesh>
-                <mesh position={[-a.w * 0.18, 0.75, -a.d * 0.15]} castShadow>
-                  <boxGeometry args={[Math.min(a.w * 0.36, 0.85), 1.2, Math.min(a.d * 0.3, 0.95)]} />
-                  <meshStandardMaterial map={maps.cardboard} roughness={0.9} />
-                </mesh>
-                <mesh position={[a.w * 0.2, 0.08, a.d * 0.12]} castShadow>
-                  <boxGeometry args={[Math.min(a.w * 0.38, 0.9), 0.1, Math.min(a.d * 0.32, 1.0)]} />
-                  <meshStandardMaterial color={COLORS.pallet} roughness={0.9} />
-                </mesh>
-                <mesh position={[a.w * 0.2, 0.7, a.d * 0.12]} castShadow>
-                  <boxGeometry
-                    args={[
-                      Math.min(a.w * 0.34, 0.8),
-                      1.1,
-                      Math.min(a.d * 0.28, 0.85),
-                    ]}
+            {floorUnits.map((u, i) => {
+              const cols = Math.ceil(Math.sqrt(floorUnits.length));
+              const row = Math.floor(i / cols);
+              const col = i % cols;
+              const ox = (col - (cols - 1) / 2) * Math.min(a.w * 0.35, 0.9);
+              const oz = (row - (Math.ceil(floorUnits.length / cols) - 1) / 2) * Math.min(a.d * 0.35, 0.85);
+              const order = orders.find((o) => o.id === u.orderId);
+              const label = unitShortLabel(order, u);
+              const bw = Math.min(a.w * 0.38, 0.9);
+              const bd = Math.min(a.d * 0.32, 0.85);
+              const pick: PickInfo = {
+                code: a.id,
+                kind: "floor",
+                label,
+                unitId: u.id,
+              };
+              return (
+                <group key={u.id} position={[ox, 0.08, oz]}>
+                  <PalletCargo w={bw} d={bd} h={0.55} variant={0} maps={maps} />
+                  <GoodsLabel
+                    text={label}
+                    y={0.72}
+                    onPick={() => onSelect(pick)}
                   />
-                  <meshStandardMaterial
-                    color={COLORS.wrapBlack}
-                    roughness={0.35}
-                    metalness={0.1}
+                  <CargoHitTarget
+                    w={bw}
+                    d={bd}
+                    h={0.55}
+                    onPick={() => onSelect(pick)}
                   />
-                </mesh>
-              </>
-            )}
+                </group>
+              );
+            })}
           </group>
         );
       })}
@@ -838,6 +994,7 @@ function IndustrialRack({
   footprints,
   fill,
   wholeRack,
+  wholeRackPick,
   onSelect,
   markMode,
   maps,
@@ -849,15 +1006,10 @@ function IndustrialRack({
 }: {
   box: RackBox;
   fillAmt: Map<string, number>;
-  footprints: {
-    level: number;
-    offsetX: number;
-    offsetZ: number;
-    w: number;
-    d: number;
-  }[];
+  footprints: FootprintDraw[];
   fill: RackFill;
   wholeRack: boolean;
+  wholeRackPick?: PickInfo | null;
   onSelect: (info: PickInfo) => void;
   markMode: boolean;
   maps: Maps;
@@ -987,12 +1139,22 @@ function IndustrialRack({
           onClick={(e) => {
             if (markMode) return;
             e.stopPropagation();
+            if (wholeRackPick) {
+              onSelect(wholeRackPick);
+              return;
+            }
             onSelect({
               code: locationCode(rack, "K", 1),
               kind: "rack",
               rack,
               label: `Stelažas ${rack} · visas užimtas`,
             });
+          }}
+          onPointerOver={() => {
+            if (!markMode) document.body.style.cursor = "pointer";
+          }}
+          onPointerOut={() => {
+            document.body.style.cursor = "default";
           }}
         >
           <mesh position={[0, 1.08, 0]} castShadow>
@@ -1007,6 +1169,13 @@ function IndustrialRack({
               metalness={0.1}
             />
           </mesh>
+          {wholeRackPick?.label && (
+            <GoodsLabel
+              text={wholeRackPick.label}
+              y={2.55}
+              onPick={() => wholeRackPick && onSelect(wholeRackPick)}
+            />
+          )}
         </group>
       )}
 
@@ -1144,8 +1313,19 @@ function IndustrialRack({
                     w={Math.max(0.35, f.w * 0.85)}
                     d={Math.max(0.35, f.d * 0.85)}
                     h={0.4}
-                    variant={rack + level + fi}
+                    variant={0}
                     maps={maps}
+                  />
+                  <GoodsLabel
+                    text={f.label}
+                    y={0.58}
+                    onPick={() => onSelect(footprintPick(f))}
+                  />
+                  <CargoHitTarget
+                    w={Math.max(0.35, f.w * 0.85)}
+                    d={Math.max(0.35, f.d * 0.85)}
+                    h={0.4}
+                    onPick={() => onSelect(footprintPick(f))}
                   />
                 </group>
               );
@@ -1237,7 +1417,7 @@ function SmallShelf({
   box: SmallShelfBox;
   occ: Map<string, boolean>;
   fillAmt: Map<string, number>;
-  footprints: { offsetX: number; offsetZ: number; w: number; d: number }[];
+  footprints: FootprintDraw[];
   onSelect: (info: PickInfo) => void;
   markMode: boolean;
   maps: Maps;
@@ -1329,31 +1509,6 @@ function SmallShelf({
           roughness={0.5}
         />
       </mesh>
-      {levels.slice(0, busy ? 5 : 2).map((y, i) => (
-        <mesh
-          key={`b${i}`}
-          position={[
-            ((i % 2) - 0.5) * w * 0.15,
-            y + 0.08,
-            ((i % 3) - 1) * d * 0.22,
-          ]}
-          castShadow
-        >
-          <boxGeometry
-            args={[
-              w * (0.45 + (i % 2) * 0.1),
-              0.12 + (i % 2) * 0.04,
-              Math.min(0.32, d * 0.22),
-            ]}
-          />
-          <meshStandardMaterial
-            map={maps.cardboard}
-            roughness={0.9}
-            transparent={!busy}
-            opacity={busy ? 1 : 0.35}
-          />
-        </mesh>
-      ))}
 
       {/* Drawable — žymėk plotą ant 15/16 (ar 6/7) lentynos */}
       <mesh
@@ -1421,6 +1576,24 @@ function SmallShelf({
               opacity={0.5}
             />
           </mesh>
+          <PalletCargo
+            w={Math.max(0.2, f.w * 0.8)}
+            d={Math.max(0.2, f.d * 0.8)}
+            h={0.22}
+            variant={0}
+            maps={maps}
+          />
+          <GoodsLabel
+            text={f.label}
+            y={0.38}
+            onPick={() => onSelect(footprintPick(f))}
+          />
+          <CargoHitTarget
+            w={Math.max(0.2, f.w * 0.8)}
+            d={Math.max(0.2, f.d * 0.8)}
+            h={0.22}
+            onPick={() => onSelect(footprintPick(f))}
+          />
         </group>
       );
       })}
@@ -1552,18 +1725,6 @@ function OverDoorBay({
         </group>
       ))}
 
-      {([-0.55, 0, 0.55] as const).map((ox, i) => (
-        <group key={i} position={[ox * (door.width * 0.55), beamY + 0.05, 0]}>
-          <PalletCargo
-            w={0.55}
-            d={0.7}
-            h={0.42}
-            variant={i + (door.id === "exit" ? 0 : 2)}
-            maps={maps}
-          />
-        </group>
-      ))}
-
       {door.id === "exit" && (
         <mesh position={[0, beamY - 0.2, -inward * (depth / 2 + 0.02)]}>
           <planeGeometry args={[0.35, 0.18]} />
@@ -1579,16 +1740,20 @@ function CameraRig({
   enabled,
   focusCamera,
   focusSeq,
+  controlsRef,
 }: {
   preset: ViewPreset;
   enabled: boolean;
   focusCamera?: MapFocus["camera"] | null;
   focusSeq?: number;
+  controlsRef?: React.MutableRefObject<CameraControlsImpl | null>;
 }) {
   const ref = useRef<CameraControlsImpl>(null);
   const { gl } = useThree();
-  const focusSeqRef = useRef(0);
-  focusSeqRef.current = focusSeq ?? 0;
+
+  useEffect(() => {
+    if (controlsRef) controlsRef.current = ref.current;
+  }, [controlsRef]);
 
   useEffect(() => {
     const c = ref.current;
@@ -1603,8 +1768,12 @@ function CameraRig({
         focusCamera.target[2],
         true,
       );
-      return;
     }
+  }, [focusSeq, focusCamera]);
+
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
     const p = PRESETS[preset];
     void c.setLookAt(
       p.position[0],
@@ -1615,29 +1784,18 @@ function CameraRig({
       p.target[2],
       true,
     );
-  }, [preset, focusSeq, focusCamera]);
+  }, [preset]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
       const c = ref.current;
-      if (!c || focusSeqRef.current > 0) return;
-      // Jokios „nematomos sienos“ — galima eiti kiaurai tarp 15↔16
+      if (!c) return;
       c.boundaryEnclosesCamera = false;
       c.setBoundary(
         new THREE.Box3(
           new THREE.Vector3(-1e4, -1e4, -1e4),
           new THREE.Vector3(1e4, 1e4, 1e4),
         ),
-      );
-      const p = PRESETS.overview;
-      void c.setLookAt(
-        p.position[0],
-        p.position[1],
-        p.position[2],
-        p.target[0],
-        p.target[1],
-        p.target[2],
-        false,
       );
     }, 50);
     return () => window.clearTimeout(t);
@@ -1766,6 +1924,7 @@ function Scene({
   focusCamera,
   focusSeq,
   pulseFootprint,
+  controlsRef,
 }: {
   state: AppState;
   selectedCode: string | null;
@@ -1802,6 +1961,7 @@ function Scene({
   focusCamera?: MapFocus["camera"] | null;
   focusSeq?: number;
   pulseFootprint?: FootprintPulse | null;
+  controlsRef?: React.MutableRefObject<CameraControlsImpl | null>;
 }) {
   const layout = useMemo(() => getRackLayout(), []);
   const shelves = useMemo(() => getSmallShelfLayout(), []);
@@ -1809,17 +1969,35 @@ function Scene({
   const fillAmt = useMemo(() => slotFillAmount(state), [state]);
   const fill = useMemo(() => rackFill(state), [state]);
   const whole = useMemo(() => rackFullyOccupiedByUnit(state), [state]);
+  const wholeRackPicks = useMemo(() => {
+    const m = new Map<number, PickInfo>();
+    for (const u of state.units) {
+      if (!u.occupiesEntireRack || !u.locationId) continue;
+      if (!["stored", "received", "staged"].includes(u.status)) continue;
+      const loc = state.locations.find((l) => l.id === u.locationId);
+      if (!loc?.rack) continue;
+      const order = state.orders.find((o) => o.id === u.orderId);
+      m.set(loc.rack, {
+        code: loc.code,
+        kind: "rack",
+        rack: loc.rack,
+        level: loc.level ?? undefined,
+        side: loc.side ?? undefined,
+        label: unitShortLabel(order, u),
+        unitId: u.id,
+      });
+    }
+    return m;
+  }, [state]);
   const footprintsByRack = useMemo(() => {
-    const m = new Map<
-      number,
-      { level: number; offsetX: number; offsetZ: number; w: number; d: number }[]
-    >();
+    const m = new Map<number, FootprintDraw[]>();
     for (const u of state.units) {
       if (!u.locationId || u.occupiesEntireRack) continue;
       if (!["stored", "received", "staged"].includes(u.status)) continue;
       if (!u.footprintW || !u.footprintD) continue;
       const loc = state.locations.find((l) => l.id === u.locationId);
       if (!loc || loc.kind !== "pallet" || !loc.rack || !loc.level) continue;
+      const order = state.orders.find((o) => o.id === u.orderId);
       const list = m.get(loc.rack) ?? [];
       list.push({
         level: loc.level,
@@ -1827,28 +2005,37 @@ function Scene({
         offsetZ: u.footprintOffsetZ ?? 0,
         w: u.footprintW,
         d: u.footprintD,
+        label: unitShortLabel(order, u),
+        unitId: u.id,
+        code: loc.code,
+        kind: "pallet",
+        rack: loc.rack,
+        side: loc.side ?? undefined,
       });
       m.set(loc.rack, list);
     }
     return m;
   }, [state]);
   const footprintsBySmall = useMemo(() => {
-    const m = new Map<
-      string,
-      { offsetX: number; offsetZ: number; w: number; d: number }[]
-    >();
+    const m = new Map<string, FootprintDraw[]>();
     for (const u of state.units) {
       if (!u.locationId || u.occupiesEntireRack) continue;
       if (!["stored", "received", "staged"].includes(u.status)) continue;
       if (!u.footprintW || !u.footprintD) continue;
       const loc = state.locations.find((l) => l.id === u.locationId);
       if (!loc || loc.kind !== "small_shelf") continue;
+      const order = state.orders.find((o) => o.id === u.orderId);
       const list = m.get(loc.code) ?? [];
       list.push({
+        level: loc.level ?? 1,
         offsetX: u.footprintOffsetX ?? 0,
         offsetZ: u.footprintOffsetZ ?? 0,
         w: u.footprintW,
         d: u.footprintD,
+        label: unitShortLabel(order, u),
+        unitId: u.id,
+        code: loc.code,
+        kind: "small_shelf",
       });
       m.set(loc.code, list);
     }
@@ -1888,6 +2075,8 @@ function Scene({
       ))}
       <FloorAreas
         areas={state.floorAreas ?? []}
+        units={state.units}
+        orders={state.orders}
         selectedCode={selectedCode}
         onSelect={onSelect}
         markMode={markMode}
@@ -1914,6 +2103,7 @@ function Scene({
           footprints={footprintsByRack.get(box.rack) ?? []}
           fill={fill.get(box.rack) ?? "empty"}
           wholeRack={whole.get(box.rack) === true}
+          wholeRackPick={wholeRackPicks.get(box.rack)}
           onSelect={onSelect}
           markMode={markMode}
           maps={maps}
@@ -1947,6 +2137,7 @@ function Scene({
         enabled={!markMode && !shelfDrawing}
         focusCamera={focusCamera}
         focusSeq={focusSeq}
+        controlsRef={controlsRef}
       />
     </>
   );
@@ -1956,7 +2147,48 @@ export type Warehouse3DHandle = {
   enterFullscreen: () => void;
   focusRack: (rack: number, locationCode?: string | null) => void;
   focusUnit: (unitId: string) => void;
+  clearFocus: () => void;
+  moveCamera: (action: "forward" | "back" | "left" | "right" | "up" | "down") => void;
 };
+
+function MobileWalkPad({
+  onMove,
+}: {
+  onMove: (action: "forward" | "back" | "left" | "right" | "up" | "down") => void;
+}) {
+  const btn =
+    "pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full bg-stone-900/75 text-lg font-bold text-white active:bg-stone-900";
+  const btnSm =
+    "pointer-events-auto flex h-9 w-11 items-center justify-center rounded-full bg-stone-900/60 text-sm font-bold text-white active:bg-stone-900";
+  return (
+    <div className="pointer-events-none absolute bottom-16 right-3 z-20 flex items-end gap-2 sm:hidden">
+      <div className="flex flex-col gap-1">
+        <button type="button" className={btnSm} onClick={() => onMove("up")} aria-label="Aukštyn">
+          ▲
+        </button>
+        <button type="button" className={btnSm} onClick={() => onMove("down")} aria-label="Žemyn">
+          ▼
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-1">
+        <div />
+        <button type="button" className={btn} onClick={() => onMove("forward")} aria-label="Pirmyn">
+          ▲
+        </button>
+        <div />
+        <button type="button" className={btn} onClick={() => onMove("left")} aria-label="Kairėn">
+          ◀
+        </button>
+        <button type="button" className={btn} onClick={() => onMove("back")} aria-label="Atgal">
+          ▼
+        </button>
+        <button type="button" className={btn} onClick={() => onMove("right")} aria-label="Dešinėn">
+          ▶
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export const Warehouse3D = forwardRef<
   Warehouse3DHandle,
@@ -1968,6 +2200,7 @@ export const Warehouse3D = forwardRef<
     onFloorDraftComplete?: (draft: FloorDraft) => void;
     onShelfDraftComplete?: (draft: ShelfDraft) => void;
     highlightRack?: number | null;
+    onHighlightChange?: (active: boolean) => void;
   }
 >(function Warehouse3D(
   {
@@ -1978,6 +2211,7 @@ export const Warehouse3D = forwardRef<
     onFloorDraftComplete,
     onShelfDraftComplete,
     highlightRack = null,
+    onHighlightChange,
   },
   ref,
 ) {
@@ -1986,11 +2220,12 @@ export const Warehouse3D = forwardRef<
   const [mapFocus, setMapFocus] = useState<MapFocus | null>(null);
   const [focusSeq, setFocusSeq] = useState(0);
   const [mounted, setMounted] = useState(false);
-  const [coarsePointer, setCoarsePointer] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const cameraControlsRef = useRef<CameraControlsImpl | null>(null);
 
   useEffect(() => {
-    const mq = window.matchMedia("(pointer: coarse)");
-    const update = () => setCoarsePointer(mq.matches);
+    const mq = window.matchMedia("(max-width: 640px)");
+    const update = () => setIsMobileViewport(mq.matches);
     update();
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
@@ -2056,6 +2291,7 @@ export const Warehouse3D = forwardRef<
         setMapFocus(f);
         if (f.selectedCode) setSelectedCode(f.selectedCode);
         setFocusSeq((n) => n + 1);
+        onHighlightChange?.(true);
       },
       focusUnit: (unitId: string) => {
         const f = resolveUnitMapFocus(state, unitId);
@@ -2063,16 +2299,43 @@ export const Warehouse3D = forwardRef<
         setMapFocus(f);
         if (f.selectedCode) setSelectedCode(f.selectedCode);
         setFocusSeq((n) => n + 1);
+        onHighlightChange?.(true);
+      },
+      clearFocus: () => {
+        setMapFocus(null);
+        setSelectedCode(null);
+        onHighlightChange?.(false);
+      },
+      moveCamera: (action) => {
+        const c = cameraControlsRef.current;
+        if (!c) return;
+        const step = 0.38;
+        if (action === "forward") void c.forward(step, true);
+        else if (action === "back") void c.forward(-step, true);
+        else if (action === "left") void c.truck(-step, 0, true);
+        else if (action === "right") void c.truck(step, 0, true);
+        else if (action === "up" || action === "down") {
+          const pos = new THREE.Vector3();
+          const tgt = new THREE.Vector3();
+          c.getPosition(pos);
+          c.getTarget(tgt);
+          const dy = action === "up" ? step * 0.65 : -step * 0.65;
+          void c.setLookAt(
+            pos.x,
+            Math.min(WALL_H - 0.5, Math.max(0.3, pos.y + dy)),
+            pos.z,
+            tgt.x,
+            Math.min(WALL_H - 0.8, Math.max(0.2, tgt.y + dy * 0.5)),
+            tgt.z,
+            true,
+          );
+        }
       },
     }),
-    [state],
+    [state, onHighlightChange],
   );
 
-  useEffect(() => {
-    if (!mapFocus) return;
-    const t = window.setTimeout(() => setMapFocus(null), 14000);
-    return () => window.clearTimeout(t);
-  }, [mapFocus, focusSeq]);
+  // highlight valdoma rankiniu būdu per clearFocus — be auto išjungimo
 
   function clampToMax(
     lx: number,
@@ -2171,6 +2434,9 @@ export const Warehouse3D = forwardRef<
     shelfStartRef.current = null;
     const pt = clampToMax(localX, localZ, start.maxW, start.maxD);
     const draft = previewFromEnds(start, pt);
+    if (draft.d >= start.maxD * 0.88) {
+      draft.d = BAY_DEPTH_M;
+    }
     setShelfPreview(null);
     document.body.style.cursor = "default";
     const movedPx = Math.hypot(
@@ -2274,6 +2540,7 @@ export const Warehouse3D = forwardRef<
               focusCamera={mapFocus?.camera ?? null}
               focusSeq={focusSeq}
               pulseFootprint={mapFocus?.pulse ?? null}
+              controlsRef={cameraControlsRef}
               onSelect={(info) => {
                 setSelectedCode(info.code);
                 onPick?.(info);
@@ -2282,17 +2549,51 @@ export const Warehouse3D = forwardRef<
           </Suspense>
         </Canvas>
 
+        {isMobileViewport && !markFloorMode && (
+          <MobileWalkPad
+            onMove={(action) => {
+              const c = cameraControlsRef.current;
+              if (!c) return;
+              const step = 0.38;
+              if (action === "forward") void c.forward(step, true);
+              else if (action === "back") void c.forward(-step, true);
+              else if (action === "left") void c.truck(-step, 0, true);
+              else if (action === "right") void c.truck(step, 0, true);
+              else if (action === "up" || action === "down") {
+                const pos = new THREE.Vector3();
+                const tgt = new THREE.Vector3();
+                c.getPosition(pos);
+                c.getTarget(tgt);
+                const dy = action === "up" ? step * 0.65 : -step * 0.65;
+                void c.setLookAt(
+                  pos.x,
+                  action === "up"
+                    ? Math.min(WALL_H - 0.5, pos.y + dy)
+                    : Math.max(0.5, pos.y + dy),
+                  pos.z,
+                  tgt.x,
+                  action === "up"
+                    ? Math.min(WALL_H - 0.8, tgt.y + dy * 0.5)
+                    : Math.max(0.3, tgt.y + dy * 0.5),
+                  tgt.z,
+                  true,
+                );
+              }
+            }}
+          />
+        )}
+
         <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 flex w-[min(100%-1rem,36rem)] -translate-x-1/2 justify-center px-2">
           <span className="rounded-full bg-stone-900/70 px-3 py-1.5 text-center text-[10px] font-medium leading-snug text-white sm:text-[11px]">
             {markFloorMode
               ? "Tempk ant grindų — pažymėk plotą"
               : shelfDrawingUi
-                ? coarsePointer
+                ? isMobileViewport
                   ? "Tempk pirštu — atleisk kai baigsi"
                   : "Tempk — paleisk mygtuką kai baigsi"
-                : coarsePointer
-                  ? "Spausk skaičių ant stelažo · 1 pirštu sukti · 2 pirštais priartinti"
-                  : "WASD = eiti · Spausk stelažą = info · Tempk ant sijos = plotas"}
+                : isMobileViewport
+                  ? "Spausk prekę = info · rodyklės judėjimui · kairėje ▲▼ aukštis"
+                  : "Judėjimas: W A S D · Q/E aukštis · Spausk stelažą = info · Tempk ant sijos = plotas"}
           </span>
         </div>
       </div>

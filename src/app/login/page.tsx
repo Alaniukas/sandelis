@@ -1,11 +1,10 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") || "/";
   const errorParam = params.get("error");
@@ -26,6 +25,7 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ username, password }),
       });
 
@@ -41,8 +41,8 @@ function LoginForm() {
         return;
       }
 
-      router.replace(next);
-      router.refresh();
+      // Pilnas perkrovimas — telefone kitaip slapukai kartais neįsigalioja
+      window.location.assign(next);
     } catch {
       setError("Serverio klaida — bandyk vėliau.");
       setLoading(false);

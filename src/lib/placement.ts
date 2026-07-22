@@ -1,5 +1,6 @@
 import type { AppState, Zone } from "./types";
 import { rackFill, suggestLocations } from "./demo-store";
+import { zoneLabel } from "./ui-labels";
 
 export type PlacementSuggestion = {
   locationId: string;
@@ -17,6 +18,10 @@ function inferFlags(text: string) {
   const longStay =
     /\b(\d+)\s*[-–]?\s*(\d+)?\s*m[eė]n/.test(t) ||
     /ilgai|long.?term|kelis m[eė]n|sand[eė]lyje\s+\d/.test(t);
+  const unknownPickup =
+    /nežinau|nezinau|nežinia|nezinia|kada atsiims|kada pasiims|kada pristat|neaišku kada/.test(
+      t,
+    );
   const manyPallets =
     /\b([3-9]|\d{2,})\s*palet/.test(t) ||
     /dideli?a?s?\s+palet/.test(t) ||
@@ -29,9 +34,8 @@ function inferFlags(text: string) {
     : /expo/.test(t)
       ? "EXPO"
       : null;
-  const floor =
-    /ant grind|palaid|floor|netelpa/.test(t);
-  return { longStay, manyPallets, block, zone, floor };
+  const floor = /ant grind|palaid|floor|netelpa/.test(t);
+  return { longStay, unknownPickup, manyPallets, block, zone, floor };
 }
 
 /** Heuristika + užimtumas — veikia be Gemini */
@@ -50,9 +54,9 @@ export function suggestPlacementLocal(
   const colli = opts.colli ?? 1;
   const blockStorage = flags.block || colli >= 4;
   const fill = rackFill(state);
+  const avoidEntrance = flags.unknownPickup && !flags.longStay;
 
   if (blockStorage) {
-    // Tuščiausias stelažas zonoje
     const racks = state.locations
       .filter(
         (l) =>
@@ -68,14 +72,13 @@ export function suggestPlacementLocal(
     let best: number | null = null;
     let bestScore = -1;
     for (const r of racks) {
+      if (avoidEntrance && r <= 4) continue;
       const f = fill.get(r) ?? "empty";
-      const score = f === "empty" ? 3 : f === "partial" ? 1 : 0;
-      // Ilgam laikymui — DILED / didesni numeriai truputį geriau
-      const zoneBonus =
-        flags.longStay && zone === "DILED" && r >= 13 ? 0.5 : 0;
-      const s = score + zoneBonus;
-      if (s > bestScore) {
-        bestScore = s;
+      let score = f === "empty" ? 3 : f === "partial" ? 1 : 0;
+      if (flags.longStay && zone === "DILED" && r >= 13) score += 0.5;
+      if (flags.unknownPickup && r >= 8 && r <= 14) score += 0.4;
+      if (score > bestScore) {
+        bestScore = score;
         best = r;
       }
     }
@@ -93,16 +96,16 @@ export function suggestPlacementLocal(
           occupyEntireRack: true,
           zone,
           reason: flags.longStay
-            ? `Ilgam laikymui siūlau laisvą stelažą ${best} (${zone}) — visas stelažas.`
-            : `Dėl dydžio / kelių palečių siūlau laisvą stelažą ${best} (${zone}).`,
+            ? `Ilgam laikymui siūlau laisvą stelažą ${best} (${zoneLabel(zone)}) — visas stelažas.`
+            : `Dėl dydžio / kelių palečių siūlau laisvą stelažą ${best} (${zoneLabel(zone)}).`,
         };
       }
     }
   }
 
-  // Prefer L1 free; long stay → L2 jei L1 užimta zonoje
-  const preferLevel = flags.longStay ? 2 : 1;
-  const ids = suggestLocations(state, zone, false, 12);
+  const preferLevel =
+    flags.longStay ? 2 : flags.unknownPickup ? 2 : 1;
+  const ids = suggestLocations(state, zone, false, 12, avoidEntrance);
   const locs = ids
     .map((id) => state.locations.find((l) => l.id === id))
     .filter(Boolean);
@@ -114,6 +117,15 @@ export function suggestPlacementLocal(
 
   if (!preferred || preferred.rack == null || !preferred.side) return null;
 
+  let reason: string;
+  if (flags.unknownPickup) {
+    reason = `Neaišku kada atsiims — siūlau ramesnę vietą viduryje: ${preferred.code} (${zoneLabel(zone)}).`;
+  } else if (flags.longStay) {
+    reason = `Pagal pastabas (ilgesnis saugojimas) — ${preferred.code}, mažiau judri vieta.`;
+  } else {
+    reason = `Laisva vieta pagal užimtumą: ${preferred.code} (${zoneLabel(zone)}).`;
+  }
+
   return {
     locationId: preferred.id,
     code: preferred.code,
@@ -122,8 +134,6 @@ export function suggestPlacementLocal(
     side: preferred.side,
     occupyEntireRack: false,
     zone,
-    reason: flags.longStay
-      ? `Pagal pastabas (ilgesnis saugojimas) — ${preferred.code}, mažiau judri vieta.`
-      : `Laisva vieta pagal užimtumą: ${preferred.code} (${zone}).`,
+    reason,
   };
 }

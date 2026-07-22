@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { loadState, subscribeWms } from "@/lib/demo-store";
+import { loadState, normalizeState, saveState, subscribeWms } from "@/lib/demo-store";
 import type { AppState } from "@/lib/types";
+import { hydrateFromRemote } from "@/lib/wms-sync";
 
 export function useWms(): AppState {
-  // Same empty seed on server + first client paint → no hydration mismatch
-  // (localStorage has floorAreas / orders only after mount)
   const [state, setState] = useState<AppState>(() => ({
     locations: [],
     orders: [],
@@ -18,7 +17,18 @@ export function useWms(): AppState {
   }));
 
   useEffect(() => {
-    setState(loadState());
+    const local = loadState();
+    setState(local);
+
+    void (async () => {
+      const remote = await hydrateFromRemote(local);
+      if (remote) {
+        const normalized = normalizeState(remote);
+        saveState(normalized);
+        setState(normalized);
+      }
+    })();
+
     return subscribeWms(() => setState(loadState()));
   }, []);
 

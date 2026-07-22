@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { patchSupabaseCookieOptions } from "@/lib/supabase/cookie-options";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getAuthEmail, usernameMatches } from "@/lib/supabase/username-auth";
 
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
   }
 
   const cookieStore = await cookies();
+  let response = NextResponse.json({ ok: true });
+
   const supabase = createServerClient(env.url, env.anonKey, {
     cookies: {
       getAll() {
@@ -40,7 +43,15 @@ export async function POST(request: Request) {
       },
       setAll(cookiesToSet) {
         for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options);
+          cookieStore.set(name, value, patchSupabaseCookieOptions(options));
+        }
+        response = NextResponse.json({ ok: true });
+        for (const { name, value, options } of cookiesToSet) {
+          response.cookies.set(
+            name,
+            value,
+            patchSupabaseCookieOptions(options),
+          );
         }
       },
     },
@@ -58,5 +69,8 @@ export async function POST(request: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true });
+  // Užtikrina, kad sesijos slapukai būtų įrašyti į atsakymą
+  await supabase.auth.getSession();
+
+  return response;
 }

@@ -10,6 +10,7 @@ import {
   loadState,
 } from "@/lib/demo-store";
 import { locationCode, zoneForRack } from "@/lib/locations";
+import { mergeUniqueNotes } from "@/lib/order-info";
 import { suggestPlacementLocal, type PlacementSuggestion } from "@/lib/placement";
 import { Modal } from "@/components/ui/Modal";
 import { SuggestField } from "@/components/ui/FormFields";
@@ -87,7 +88,7 @@ export function NewShipmentModal({
   const [error, setError] = useState("");
   const [occupyEntireRack, setOccupyEntireRack] = useState(false);
   const [footprintW, setFootprintW] = useState(1.1);
-  const [footprintD, setFootprintD] = useState(1.2);
+  const [footprintD, setFootprintD] = useState(1.5);
   const [footprintOffsetX, setFootprintOffsetX] = useState(0);
   const [footprintOffsetZ, setFootprintOffsetZ] = useState(0);
   const [placeNow, setPlaceNow] = useState(true);
@@ -127,7 +128,7 @@ export function NewShipmentModal({
     setDoc(emptyDoc(prefillLocation?.zone));
     setColli(1);
     setFootprintW(prefillLocation?.footprintW ?? 1.1);
-    setFootprintD(prefillLocation?.footprintD ?? 1.2);
+    setFootprintD(prefillLocation?.footprintD ?? 1.5);
     setFootprintOffsetX(prefillLocation?.footprintOffsetX ?? 0);
     setFootprintOffsetZ(prefillLocation?.footprintOffsetZ ?? 0);
     setManualRack(prefillLocation?.rack ?? "");
@@ -150,9 +151,16 @@ export function NewShipmentModal({
         if (inc.parsedJson.colliHint && inc.parsedJson.colliHint > 0) {
           setColli(inc.parsedJson.colliHint);
         }
-      }
-      if (inc?.notes) {
-        setPlacementNotes(inc.parsedJson?.notes || inc.notes);
+        const shipNotes = inc.notes?.trim() ?? "";
+        const docNotes = inc.parsedJson.notes?.trim() ?? "";
+        if (
+          shipNotes &&
+          mergeUniqueNotes(docNotes, shipNotes).length > docNotes.length
+        ) {
+          setPlacementNotes(shipNotes);
+        }
+      } else if (inc?.notes?.trim()) {
+        setPlacementNotes(inc.notes.trim());
       }
     }
   }, [open, prefillLocation, prefillFloorAreaId, fromIncomingShipmentId, wmsState.shipments]);
@@ -175,7 +183,7 @@ export function NewShipmentModal({
     setSuggesting(false);
     setOccupyEntireRack(false);
     setFootprintW(1.1);
-    setFootprintD(1.2);
+    setFootprintD(1.5);
     setFootprintOffsetX(0);
     setFootprintOffsetZ(0);
     setPlaceNow(true);
@@ -204,9 +212,6 @@ export function NewShipmentModal({
       zone: parsed.zone ?? (prefillLocation?.zone || undefined),
     });
     setColli(parsed.colliHint && parsed.colliHint > 0 ? parsed.colliHint : 1);
-    if (parsed.notes) {
-      setPlacementNotes((prev) => prev || parsed.notes);
-    }
   }
 
   async function parseFromText() {
@@ -224,7 +229,6 @@ export function NewShipmentModal({
       });
       if (!res.ok) throw new Error(await res.text());
       applyParsed((await res.json()) as ParsedDocument);
-      setPlacementNotes(pasteText.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Klaida");
     } finally {
@@ -341,9 +345,7 @@ export function NewShipmentModal({
       setError("Įrašyk bent projektą, kodą arba klientą");
       return;
     }
-    const extraNotes = [doc.notes.trim(), placementNotes.trim()]
-      .filter(Boolean)
-      .join("\n");
+    const extraNotes = mergeUniqueNotes(doc.notes, placementNotes);
     const payload: ParsedDocument = {
       ...doc,
       project: doc.project.trim() || doc.orderCode.trim() || doc.client.trim(),

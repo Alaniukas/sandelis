@@ -1,4 +1,4 @@
-import { getRackLayout, getSmallShelfLayout } from "./locations";
+import { BAY_DEPTH_M, getRackLayout, getSmallShelfLayout } from "./locations";
 import type { AppState } from "./types";
 
 const CX = 15;
@@ -154,7 +154,7 @@ export function resolveUnitMapFocus(
     const ox = unit.footprintOffsetX ?? 0;
     const oz = unit.footprintOffsetZ ?? 0;
     const w = unit.footprintW ?? 1.1;
-    const d = unit.footprintD ?? 1.2;
+    const d = unit.footprintD ?? BAY_DEPTH_M;
     const tx = lx + ox;
     const tz = lz + oz;
     const ty = beamY + 0.38;

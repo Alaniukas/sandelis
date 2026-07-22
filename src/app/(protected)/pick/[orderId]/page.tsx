@@ -2,9 +2,10 @@
 
 import { useParams } from "next/navigation";
 import { useWms } from "@/lib/use-wms";
-import { issueOrder, loadState, stageOrder } from "@/lib/demo-store";
+import { issueOrder, loadState } from "@/lib/demo-store";
 import Link from "next/link";
 import { useState } from "react";
+import { unitStatusLabel } from "@/lib/ui-labels";
 
 export default function PickPage() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -24,7 +25,7 @@ export default function PickPage() {
     const rows = units
       .map(
         (u) =>
-          `<tr><td>${u.indexInSet}/${u.totalInSet}</td><td>${u.labelTitle}</td><td>${u.status}</td></tr>`,
+          `<tr><td>${u.indexInSet}/${u.totalInSet}</td><td>${u.labelTitle}</td><td>${unitStatusLabel(u.status)}</td></tr>`,
       )
       .join("");
     w.document.write(`<!doctype html><html><head><title>Važtaraštis</title>
@@ -35,7 +36,7 @@ export default function PickPage() {
       <b>Kodas:</b> ${order!.orderCode}<br/>
       <b>Klientas:</b> ${order!.client}<br/>
       <b>Data:</b> ${new Date().toLocaleString("lt-LT")}</p>
-      <table><thead><tr><th>Vnt</th><th>Pavadinimas</th><th>Statusas</th></tr></thead>
+      <table><thead><tr><th>Vnt</th><th>Pavadinimas</th><th>Būsena</th></tr></thead>
       <tbody>${rows}</tbody></table>
       <p style="margin-top:40px">Išdavė: _________________ &nbsp;&nbsp; Gavo: _________________</p>
       <script>window.print()</script></body></html>`);
@@ -53,15 +54,6 @@ export default function PickPage() {
       </p>
 
       <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => {
-            stageOrder(loadState(), orderId);
-            setDone("Paruošta STAGING");
-          }}
-          className="rounded-lg border px-3 py-2 text-sm"
-        >
-          Į STAGING
-        </button>
         <button onClick={printWaybill} className="rounded-lg bg-stone-900 px-3 py-2 text-sm text-white">
           Spausdinti važtaraštį
         </button>
@@ -77,24 +69,16 @@ export default function PickPage() {
       </label>
 
       <button
-        className="w-full rounded-lg bg-red-800 py-2.5 text-sm text-white"
         onClick={() => {
           issueOrder(loadState(), orderId, recipient || "Klientas", "");
-          setDone("Pasiėmė — archyvuota");
+          setDone("Išduota");
         }}
+        className="btn-primary"
       >
-        Klientas pasiėmė
+        Pažymėti išduota
       </button>
 
-      {done && <p className="text-sm text-emerald-800">{done}</p>}
-
-      <ul className="rounded-xl border bg-white p-3 text-sm">
-        {units.map((u) => (
-          <li key={u.id}>
-            {u.indexInSet}/{u.totalInSet} — {u.labelTitle} ({u.status})
-          </li>
-        ))}
-      </ul>
+      {done && <p className="text-sm text-emerald-700">{done}</p>}
     </div>
   );
 }

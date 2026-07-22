@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { patchSupabaseCookieOptions } from "./cookie-options";
 import { getSupabaseEnv } from "./env";
 
 export async function createClient() {
@@ -16,7 +17,7 @@ export async function createClient() {
       setAll(cookiesToSet) {
         try {
           for (const { name, value, options } of cookiesToSet) {
-            cookieStore.set(name, value, options);
+            cookieStore.set(name, value, patchSupabaseCookieOptions(options));
           }
         } catch {
           // Server Component — cookies sometimes read-only

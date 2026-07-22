@@ -6,7 +6,7 @@ import {
   assignOrderToShelf,
   loadState,
 } from "@/lib/demo-store";
-import { locationCode, zoneForRack } from "@/lib/locations";
+import { BAY_DEPTH_M, locationCode, zoneForRack } from "@/lib/locations";
 import { formatOrderOption } from "@/lib/ui-labels";
 import { useWms } from "@/lib/use-wms";
 import type { PrefillLocation } from "@/components/NewShipmentModal";
@@ -21,7 +21,7 @@ export type ShelfDraft = {
   d: number;
 };
 
-const MAX_DEPTH = 1.5;
+const MAX_DEPTH = BAY_DEPTH_M;
 const MAX_WIDTH = 4;
 
 export function ShelfFootprintModal({
@@ -36,7 +36,7 @@ export function ShelfFootprintModal({
 }) {
   const state = useWms();
   const [w, setW] = useState(1.1);
-  const [d, setD] = useState(1.2);
+  const [d, setD] = useState(BAY_DEPTH_M);
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [orderId, setOrderId] = useState("");
 
@@ -170,6 +170,9 @@ export function ShelfFootprintModal({
                   )
                 }
               />
+              <span className="mt-0.5 block text-xs text-stone-500">
+                Stelažo gylis: iki {MAX_DEPTH.toFixed(2)} m
+              </span>
             </label>
           </div>
 

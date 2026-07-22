@@ -36,7 +36,7 @@ export function OrderInfoSection({
       className={`rounded-xl border border-stone-200 bg-white p-4 ${className}`}
     >
       <h2 className="font-semibold text-stone-900">Informacija ir pastabos</h2>
-      <dl className="mt-3 space-y-4 text-sm">
+      <dl className="mt-3 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
         {blocks.map((b, i) => (
           <div key={`${b.title}-${i}`}>
             <dt className="text-xs font-semibold uppercase tracking-wide text-stone-500">

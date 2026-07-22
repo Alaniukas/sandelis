@@ -38,13 +38,21 @@ const Warehouse3D = dynamic(
 const VIEW_BTNS: { id: ViewPreset; label: string; short: string }[] = [
   { id: "overview", label: "Apžvalga", short: "Apžv." },
   { id: "entrance", label: "Įėjimas", short: "Įėj." },
-  { id: "exit", label: "EXIT", short: "EXIT" },
+  { id: "exit", label: "Išėjimas", short: "Išėj." },
   { id: "top", label: "Viršus", short: "Virš." },
-  { id: "expo", label: "EXPO", short: "EXPO" },
-  { id: "diled", label: "DILED", short: "DILED" },
+  { id: "expo", label: "Ekspozicija", short: "Eksp." },
+  { id: "diled", label: "Diled", short: "Diled" },
   { id: "tunnel1516", label: "15↔16", short: "15↔16" },
   { id: "tunnel1617", label: "16↔17", short: "16↔17" },
 ];
+
+type PendingMapFocus = {
+  unitId?: string;
+  orderId?: string;
+  rack?: number | null;
+  code?: string | null;
+  label?: string | null;
+};
 
 function MapInner() {
   const state = useWms();
@@ -64,7 +72,43 @@ function MapInner() {
   const [floorDraft, setFloorDraft] = useState<FloorDraft | null>(null);
   const [shelfDraft, setShelfDraft] = useState<ShelfDraft | null>(null);
   const [hintText, setHintText] = useState<string | null>(null);
+  const [focusHighlight, setFocusHighlight] = useState(false);
   const canvasRef = useRef<Warehouse3DHandle>(null);
+  const pendingFocusRef = useRef<PendingMapFocus | null>(null);
+  const focusAppliedRef = useRef(false);
+  const focusRetryTimerRef = useRef<number | null>(null);
+
+  function clearMapFocus() {
+    if (focusRetryTimerRef.current) {
+      window.clearTimeout(focusRetryTimerRef.current);
+      focusRetryTimerRef.current = null;
+    }
+    setHintText(null);
+    setFocusHighlight(false);
+    canvasRef.current?.clearFocus();
+  }
+
+  function scheduleFocus(
+    rack: number,
+    code: string | null | undefined,
+    unitId?: string | null,
+  ) {
+    if (focusRetryTimerRef.current) {
+      window.clearTimeout(focusRetryTimerRef.current);
+    }
+    let attempts = 0;
+    const tick = () => {
+      attempts += 1;
+      if (unitId) canvasRef.current?.focusUnit(unitId);
+      else canvasRef.current?.focusRack(rack, code);
+      if (attempts < 6) {
+        focusRetryTimerRef.current = window.setTimeout(tick, 350);
+      } else {
+        focusRetryTimerRef.current = null;
+      }
+    };
+    focusRetryTimerRef.current = window.setTimeout(tick, 150);
+  }
 
   function applyPlacementHint(
     rack: number,
@@ -72,17 +116,81 @@ function MapInner() {
     reason?: string,
     unitId?: string | null,
   ) {
+    if (focusRetryTimerRef.current) {
+      window.clearTimeout(focusRetryTimerRef.current);
+      focusRetryTimerRef.current = null;
+    }
     setHintText(
       reason ||
         (code ? `Vieta: ${code}` : `Stelažas ${rack}`),
     );
-    window.setTimeout(() => {
-      if (unitId) canvasRef.current?.focusUnit(unitId);
-      else canvasRef.current?.focusRack(rack, code);
-    }, 200);
-    window.setTimeout(() => {
-      setHintText(null);
-    }, 14000);
+    setFocusHighlight(true);
+    scheduleFocus(rack, code, unitId);
+  }
+
+  function applyPendingFocus() {
+    const pending = pendingFocusRef.current;
+    if (!pending || focusAppliedRef.current) return;
+    if (!state.locations.length && !state.units.length) return;
+
+    if (pending.orderId) {
+      const orderUnits = state.units.filter(
+        (u) =>
+          u.orderId === pending.orderId &&
+          ["stored", "received", "staged"].includes(u.status),
+      );
+      const unit = orderUnits.find((u) => u.locationId) ?? orderUnits[0];
+      if (!unit) return;
+      pending.unitId = unit.id;
+    }
+
+    if (pending.unitId) {
+      const unit = state.units.find((u) => u.id === pending.unitId);
+      if (!unit) return;
+
+      const loc = unit.locationId
+        ? state.locations.find((l) => l.id === unit.locationId)
+        : null;
+      const rack =
+        loc?.rack ??
+        (pending.rack != null && Number.isFinite(pending.rack)
+          ? pending.rack
+          : null);
+
+      if (rack != null) {
+        applyPlacementHint(
+          rack,
+          pending.code || loc?.code,
+          pending.label || "Radai prekę",
+          pending.unitId,
+        );
+      } else if (unit.floorAreaId) {
+        setHintText(pending.label || "Radai prekę (ant grindų)");
+        setFocusHighlight(true);
+        scheduleFocus(1, null, pending.unitId);
+      } else {
+        applyPlacementHint(
+          pending.rack ?? 1,
+          pending.code,
+          pending.label || "Radai prekę",
+          pending.unitId,
+        );
+      }
+
+      focusAppliedRef.current = true;
+      pendingFocusRef.current = null;
+      return;
+    }
+
+    if (pending.rack != null && Number.isFinite(pending.rack)) {
+      applyPlacementHint(
+        pending.rack,
+        pending.code,
+        pending.label || (pending.code ? `Vieta: ${pending.code}` : undefined),
+      );
+      focusAppliedRef.current = true;
+      pendingFocusRef.current = null;
+    }
   }
 
   useEffect(() => {
@@ -103,43 +211,49 @@ function MapInner() {
     const unitRaw = params.get("unit");
     const label = params.get("label");
     const hint = params.get("hint") === "1";
+    const orderRaw = params.get("order");
 
-    if (unitRaw && hint) {
-      const unit = state.units.find((u) => u.id === unitRaw);
-      if (unit) {
-        const loc = unit.locationId
-          ? state.locations.find((l) => l.id === unit.locationId)
-          : null;
-        const rack =
-          loc?.rack ??
-          (rackRaw ? Number(rackRaw) : null);
-        if (rack != null && Number.isFinite(rack)) {
-          applyPlacementHint(
-            rack,
-            params.get("code") || loc?.code,
-            label ? `Radai: ${label}` : `Radai prekę`,
-            unitRaw,
-          );
-        } else if (unit.floorAreaId) {
-          setHintText(label ? `Radai: ${label}` : `Radai prekę (ant grindų)`);
-          window.setTimeout(() => canvasRef.current?.focusUnit(unitRaw), 200);
-          window.setTimeout(() => setHintText(null), 14000);
-        } else if (label) {
-          setHintText(`Radai: ${label} (vieta ant grindų)`);
-        }
-      }
+    if (!hint) return;
+
+    focusAppliedRef.current = false;
+
+    if (orderRaw) {
+      pendingFocusRef.current = {
+        orderId: orderRaw,
+        label: label || "Užsakymo vieta sandėlyje",
+      };
       router.replace("/map", { scroll: false });
       return;
     }
 
-    if (!rackRaw) return;
-    const rack = Number(rackRaw);
-    if (!Number.isFinite(rack) || rack < 1 || rack > 18) return;
-    const code = params.get("code");
-    if (hint) applyPlacementHint(rack, code, label ? `Radai: ${label}` : undefined);
-    router.replace("/map", { scroll: false });
+    if (unitRaw) {
+      pendingFocusRef.current = {
+        unitId: unitRaw,
+        rack: rackRaw ? Number(rackRaw) : null,
+        code: params.get("code"),
+        label: label || "Radai prekę",
+      };
+      router.replace("/map", { scroll: false });
+      return;
+    }
+
+    if (rackRaw) {
+      const rack = Number(rackRaw);
+      if (Number.isFinite(rack) && rack >= 1 && rack <= 18) {
+        pendingFocusRef.current = {
+          rack,
+          code: params.get("code"),
+          label: label || undefined,
+        };
+        router.replace("/map", { scroll: false });
+      }
+    }
+  }, [params, router]);
+
+  useEffect(() => {
+    applyPendingFocus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params]);
+  }, [state, params]);
 
   const stats = useMemo(() => {
     const active = state.units.filter((u) =>
@@ -171,7 +285,7 @@ function MapInner() {
       zone: loc.zone === "LONG" ? "EXPO" : (loc.zone as "EXPO" | "DILED"),
       rack: loc.rack ?? undefined,
       footprintW: 1.1,
-      footprintD: 1.2,
+      footprintD: 1.5,
       footprintOffsetX: 0,
     });
     setNewOpen(true);
@@ -229,9 +343,30 @@ function MapInner() {
       )}
 
       {hintText && (
-        <div className="mx-3 shrink-0 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950 sm:mx-0">
-          <span className="font-semibold">Paieška · </span>
-          {hintText}
+        <div className="mx-3 flex shrink-0 items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950 sm:mx-0">
+          <p className="min-w-0">
+            <span className="font-semibold">Rodoma: </span>
+            {hintText}
+          </p>
+          <button
+            type="button"
+            className="btn-secondary shrink-0 !px-3 !py-2 !text-xs"
+            onClick={clearMapFocus}
+          >
+            Nustoti rodyti
+          </button>
+        </div>
+      )}
+
+      {focusHighlight && !hintText && (
+        <div className="mx-3 flex shrink-0 justify-end sm:mx-0">
+          <button
+            type="button"
+            className="btn-secondary !px-3 !py-2 !text-xs"
+            onClick={clearMapFocus}
+          >
+            Nustoti rodyti
+          </button>
         </div>
       )}
 
@@ -266,6 +401,7 @@ function MapInner() {
             state={state}
             preset={preset}
             markFloorMode={markFloor}
+            onHighlightChange={setFocusHighlight}
             onPick={setPick}
             onFloorDraftComplete={(d) => {
               setMarkFloor(false);

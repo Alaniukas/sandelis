@@ -7,7 +7,6 @@ export const BARTENDER_COLUMNS = [
   "Objektas",
   "Kiek deziu paleciu",
   "atvykimo data",
-  "QR",
 ] as const;
 
 export const DEFAULT_APP_URL = "https://sandelio.vercel.app";
@@ -68,7 +67,7 @@ export async function buildOrderLabel(params: {
   if (!token) throw new Error("Užsakymas neturi QR token");
 
   const url = `${appUrl.replace(/\/$/, "")}/o/${token}`;
-  const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 320 });
+  const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 512 });
 
   return {
     kodas: order.orderCode,
@@ -82,7 +81,7 @@ export async function buildOrderLabel(params: {
 
 export function labelToCsv(label: OrderLabelData): string {
   const header = BARTENDER_COLUMNS.join(";");
-  const row = [label.kodas, label.objektas, label.kiekis, label.data, label.qr]
+  const row = [label.kodas, label.objektas, label.kiekis, label.data]
     .map((v) => `"${String(v).replace(/"/g, '""')}"`)
     .join(";");
   return `\uFEFF${header}\r\n${row}`;

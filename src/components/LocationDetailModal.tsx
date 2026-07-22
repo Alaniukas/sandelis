@@ -29,7 +29,18 @@ export function LocationDetailModal({
   const units = useMemo(() => {
     if (!pick) return [];
     if (pick.kind === "floor") {
-      return unitsOnFloorArea(state, pick.code);
+      const onFloor = unitsOnFloorArea(state, pick.code);
+      if (pick.unitId) {
+        const focused = onFloor.find((u) => u.id === pick.unitId);
+        if (focused) return onFloor;
+        const extra = state.units.find((u) => u.id === pick.unitId);
+        return extra ? [extra, ...onFloor.filter((u) => u.id !== extra.id)] : onFloor;
+      }
+      return onFloor;
+    }
+    if (pick.kind === "rack" && pick.unitId) {
+      const u = state.units.find((unit) => unit.id === pick.unitId);
+      return u ? [u] : unitsAtLocation(state, pick.code);
     }
     return unitsAtLocation(state, pick.code);
   }, [state, pick]);
@@ -39,6 +50,13 @@ export function LocationDetailModal({
   );
   const floor = state.floorAreas.find((f) => f.id === pick?.code);
   const wholeRack = units.some((u) => u.occupiesEntireRack);
+  const focusUnit = pick?.unitId
+    ? units.find((u) => u.id === pick.unitId) ?? state.units.find((u) => u.id === pick.unitId)
+    : null;
+  const primaryUnit = focusUnit ?? units[0] ?? null;
+  const primaryOrder = primaryUnit
+    ? state.orders.find((o) => o.id === primaryUnit.orderId)
+    : null;
 
   return (
     <Modal
@@ -79,10 +97,15 @@ export function LocationDetailModal({
               )}
               {units.map((u) => {
                 const order = state.orders.find((o) => o.id === u.orderId);
+                const focused = pick?.unitId === u.id;
                 return (
                   <li
                     key={u.id}
-                    className="rounded-lg border border-stone-200 px-3 py-2 text-sm"
+                    className={`rounded-lg border px-3 py-2 text-sm ${
+                      focused
+                        ? "border-amber-400 bg-amber-50 ring-1 ring-amber-300"
+                        : "border-stone-200"
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -152,9 +175,9 @@ export function LocationDetailModal({
                 Pilnas atvykimas
               </button>
             )}
-            {units[0] && (
+            {primaryUnit && primaryOrder && (
               <Link
-                href={`/orders/${units[0].orderId}`}
+                href={`/orders/${primaryOrder.id}`}
                 className="btn-primary"
                 onClick={onClose}
               >

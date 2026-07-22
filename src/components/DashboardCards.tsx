@@ -14,9 +14,9 @@ export function DashboardCards() {
   const summary = useMemo(() => getDashboardSummary(state), [state]);
 
   return (
-    <div className="space-y-6 py-4 sm:py-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+    <div className="mx-auto w-full max-w-3xl space-y-6 py-4 text-center sm:max-w-none sm:py-6 sm:text-left">
+      <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="w-full sm:w-auto">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
             Sandėlio suvestinė
           </p>
@@ -24,7 +24,7 @@ export function DashboardCards() {
             Pradžia
           </h1>
         </div>
-        <div className="page-mobile-stack">
+        <div className="page-mobile-stack w-full max-w-xs sm:max-w-none">
           <button
             type="button"
             className="btn-primary"

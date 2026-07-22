@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { patchSupabaseCookieOptions } from "@/lib/supabase/cookie-options";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
 export async function GET(request: Request) {
@@ -13,7 +14,10 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/login?error=auth`);
   }
 
+  const redirectTo = `${origin}${next}`;
   const cookieStore = await cookies();
+  let response = NextResponse.redirect(redirectTo);
+
   const supabase = createServerClient(env.url, env.anonKey, {
     cookies: {
       getAll() {
@@ -21,7 +25,15 @@ export async function GET(request: Request) {
       },
       setAll(cookiesToSet) {
         for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set(name, value, options);
+          cookieStore.set(name, value, patchSupabaseCookieOptions(options));
+        }
+        response = NextResponse.redirect(redirectTo);
+        for (const { name, value, options } of cookiesToSet) {
+          response.cookies.set(
+            name,
+            value,
+            patchSupabaseCookieOptions(options),
+          );
         }
       },
     },
@@ -32,5 +44,5 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/login?error=auth`);
   }
 
-  return NextResponse.redirect(`${origin}${next}`);
+  return response;
 }

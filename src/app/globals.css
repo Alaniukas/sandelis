@@ -155,7 +155,21 @@ textarea:focus,
 .page-mobile-stack {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 0.5rem;
+}
+
+@media (max-width: 639px) {
+  .page-mobile-stack {
+    align-items: center;
+  }
+
+  .page-mobile-stack > .btn-primary,
+  .page-mobile-stack > .btn-secondary,
+  .page-mobile-stack > a.btn-primary,
+  .page-mobile-stack > a.btn-secondary {
+    max-width: 18rem;
+  }
 }
 
 @media (min-width: 640px) {

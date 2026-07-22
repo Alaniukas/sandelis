@@ -77,7 +77,7 @@ export default function SearchPage() {
   }
 
   return (
-    <div className="space-y-5 py-4 sm:py-6">
+    <div className="mx-auto max-w-3xl w-full space-y-5 py-4 sm:py-6">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
           Rask bet ką sandėlyje

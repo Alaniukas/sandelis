@@ -21,6 +21,9 @@ export function zoneForRack(n: number): Zone {
   return n <= 12 ? "EXPO" : "DILED";
 }
 
+/** Stelažo bay gylis (m) — visi industrial rack */
+export const BAY_DEPTH_M = 1.5;
+
 export function locationCode(
   rack: number,
   side: "K" | "D",
@@ -117,7 +120,7 @@ export function buildLocations(): Location[] {
       side: "K",
       level: 1,
       kind: "special",
-      label: "STAGING",
+      label: "Išvežimas",
     },
     {
       id: "BROKAS-0-K-1",
@@ -127,7 +130,7 @@ export function buildLocations(): Location[] {
       side: "K",
       level: 1,
       kind: "special",
-      label: "BROKAS",
+      label: "Brokas",
     },
   );
 
@@ -170,7 +173,7 @@ export interface DoorGap {
   wall: "top" | "bottom";
 }
 
-const DEPTH = 1.5;
+const DEPTH = BAY_DEPTH_M;
 const ROOM_L = 30;
 const ROOM_W = 11;
 const DOOR_W = 2.4;
@@ -218,7 +221,7 @@ function layoutWall(
     boxes,
     door: {
       id: wall === "bottom" ? "entrance" : "exit",
-      label: wall === "bottom" ? "IEJIMAS" : "EXIT",
+      label: wall === "bottom" ? "Įėjimas" : "Išėjimas",
       x: doorX,
       z: wall === "bottom" ? ROOM_W : 0,
       width: DOOR_W,

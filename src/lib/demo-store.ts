@@ -1,7 +1,7 @@
 "use client";
 
 import { v4 as uuid } from "uuid";
-import { buildLocations } from "./locations";
+import { buildLocations, BAY_DEPTH_M } from "./locations";
 import type {
   AppState,
   Defect,
@@ -25,7 +25,7 @@ function empty(): AppState {
     units: [],
     defects: [],
     handovers: [],
-    floorAreas: defaultFloorAreas(),
+    floorAreas: [],
   };
 }
 
@@ -40,15 +40,18 @@ function migrateUnit(u: Unit): Unit {
   if (footprintW == null && u.locationId) {
     if (span === "half") {
       footprintW = 0.55;
-      footprintD = 0.7;
+      footprintD = BAY_DEPTH_M * 0.85;
       footprintOffsetX = half === "R" ? 0.35 : -0.35;
       footprintOffsetZ = 0;
-    } else if (u.locationId) {
+    } else {
       footprintW = 1.1;
-      footprintD = 1.2;
+      footprintD = BAY_DEPTH_M;
       footprintOffsetX = 0;
       footprintOffsetZ = 0;
     }
+  }
+  if (footprintD != null && footprintD >= 1.15 && footprintD <= 1.25) {
+    footprintD = BAY_DEPTH_M;
   }
   return {
     ...u,
@@ -60,134 +63,221 @@ function migrateUnit(u: Unit): Unit {
     footprintD,
     footprintOffsetX,
     footprintOffsetZ: footprintOffsetZ ?? 0,
+    previousLocationId: u.previousLocationId ?? null,
   };
 }
 
-/** Seniau kiekviena dėžė kūrė atskirą unit — sujungiam toje pačioje vietoje. */
+/** Seniau kiekviena dėžė kūrė atskirą unit — sujungiam į vieną per užsakymą. */
 function consolidateDuplicatePlacedUnits(state: AppState): AppState {
-  const byKey = new Map<string, Unit[]>();
+  const byOrder = new Map<string, Unit[]>();
   for (const u of state.units) {
     if (u.status === "archived" || u.status === "issued") continue;
-    const locKey = u.locationId ?? "";
-    const floorKey = u.floorAreaId ?? "";
-    if (!locKey && !floorKey) continue;
-    const key = `${u.orderId}|${locKey}|${floorKey}|${u.status}`;
-    const list = byKey.get(key) ?? [];
+    if (!u.locationId && !u.floorAreaId) continue;
+    const list = byOrder.get(u.orderId) ?? [];
     list.push(u);
-    byKey.set(key, list);
+    byOrder.set(u.orderId, list);
   }
 
   const removeIds = new Set<string>();
-  const totalInSetPatch = new Map<string, number>();
+  const patch = new Map<string, Partial<Unit>>();
 
-  for (const group of byKey.values()) {
+  for (const [, group] of byOrder) {
     if (group.length <= 1) continue;
-    const total = Math.max(
-      group.reduce((max, u) => Math.max(max, u.totalInSet ?? 1), 0),
-      group.length,
-    );
-    totalInSetPatch.set(group[0].id, total);
-    for (let i = 1; i < group.length; i++) removeIds.add(group[i].id);
+
+    const byLoc = new Map<string, Unit[]>();
+    for (const u of group) {
+      const key = `${u.locationId ?? ""}|${u.floorAreaId ?? ""}|${u.status}`;
+      const list = byLoc.get(key) ?? [];
+      list.push(u);
+      byLoc.set(key, list);
+    }
+
+    for (const [, locGroup] of byLoc) {
+      if (locGroup.length <= 1) continue;
+      const sorted = [...locGroup].sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+      const keep = sorted[0];
+      const total = Math.max(
+        sorted.reduce((max, u) => Math.max(max, u.totalInSet ?? 1), 0),
+        sorted.length,
+      );
+      patch.set(keep.id, { totalInSet: total, indexInSet: 1 });
+      for (let i = 1; i < sorted.length; i++) removeIds.add(sorted[i].id);
+    }
   }
 
-  if (removeIds.size === 0) return state;
+  if (removeIds.size === 0 && patch.size === 0) return state;
 
   return {
     ...state,
     units: state.units
       .filter((u) => !removeIds.has(u.id))
-      .map((u) =>
-        totalInSetPatch.has(u.id)
-          ? { ...u, totalInSet: totalInSetPatch.get(u.id)!, indexInSet: 1 }
-          : u,
-      ),
+      .map((u) => {
+        const p = patch.get(u.id);
+        return p ? { ...u, ...p } : u;
+      }),
   };
 }
 
-/** Demo grindų zonos — 8–11 giliai į aisle (beveik iki pusės) pagal foto/video */
+const KNOWN_RESTORE_LOCATIONS: Record<string, string> = {
+  "BJ-1958": "LONG-12-K-3",
+};
+
+function parseLocationCodeFromText(
+  state: AppState,
+  text: string,
+): string | null {
+  const upper = text.toUpperCase();
+  const codeMatch = upper.match(
+    /\b((?:EXPO|LONG|DILED)-\d+-[KD]-\d+)\b/,
+  );
+  if (codeMatch) {
+    const found = state.locations.find((l) => l.code === codeMatch[1]);
+    if (found) return found.id;
+  }
+  const human = upper.match(
+    /(?:LONG|EXPO|DILED)\s*(\d+)\s*([KD])\s*(?:AUKŠTAS|AUKSTAS|L)\s*(\d+)/,
+  );
+  if (human) {
+    const zone = upper.includes("LONG")
+      ? "LONG"
+      : upper.includes("DILED")
+        ? "DILED"
+        : "EXPO";
+    const code = `${zone}-${human[1]}-${human[2]}-${human[3]}`;
+    const found = state.locations.find((l) => l.code === code);
+    if (found) return found.id;
+  }
+  return null;
+}
+
+function restoreStagedUnits(state: AppState): AppState {
+  const stagingIds = new Set(
+    state.locations.filter((l) => l.zone === "STAGING").map((l) => l.id),
+  );
+  if (!stagingIds.size) return state;
+
+  let changed = false;
+  const units = state.units.map((u) => {
+    if (u.status !== "staged" && !stagingIds.has(u.locationId ?? "")) return u;
+    if (!stagingIds.has(u.locationId ?? "") && u.status !== "staged") return u;
+
+    let targetId = u.previousLocationId ?? null;
+    if (!targetId) {
+      const order = state.orders.find((o) => o.id === u.orderId);
+      const blob = [
+        order?.notes,
+        order?.orderCode,
+        u.notes,
+        ...(order?.customFields?.map((f) => f.value) ?? []),
+      ]
+        .filter(Boolean)
+        .join("\n");
+      targetId = parseLocationCodeFromText(state, blob);
+      if (!targetId && order?.orderCode) {
+        const code = KNOWN_RESTORE_LOCATIONS[order.orderCode.trim().toUpperCase()];
+        if (code) {
+          targetId = state.locations.find((l) => l.code === code)?.id ?? null;
+        }
+      }
+    }
+
+    if (!targetId || stagingIds.has(targetId)) return u;
+    changed = true;
+    return {
+      ...u,
+      locationId: targetId,
+      previousLocationId: null,
+      status: "stored" as UnitStatus,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  return changed ? { ...state, units } : state;
+}
+
+function purgeNonTodayBjOrders(state: AppState): AppState {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const keepOrderIds = new Set(
+    state.orders
+      .filter((o) => {
+        const created = new Date(o.createdAt);
+        return created >= todayStart && /^BJ-/i.test(o.orderCode.trim());
+      })
+      .map((o) => o.id),
+  );
+
+  const units = state.units
+    .filter((u) => keepOrderIds.has(u.orderId) && !u.floorAreaId);
+
+  return {
+    ...state,
+    orders: state.orders.filter((o) => keepOrderIds.has(o.id)),
+    shipments: state.shipments.filter(
+      (s) => s.orderId && keepOrderIds.has(s.orderId),
+    ),
+    units,
+    defects: state.defects.filter((d) => {
+      const ship = state.shipments.find((s) => s.id === d.shipmentId);
+      return ship?.orderId && keepOrderIds.has(ship.orderId);
+    }),
+    handovers: state.handovers.filter((h) => keepOrderIds.has(h.orderId)),
+    floorAreas: [],
+  };
+}
+
+function purgeSeedFloorAreas(state: AppState): AppState {
+  const seedIds = new Set(
+    state.floorAreas
+      .filter((f) => f.notes?.startsWith("seed"))
+      .map((f) => f.id),
+  );
+  if (seedIds.size === 0) return state;
+  return {
+    ...state,
+    floorAreas: state.floorAreas.filter((f) => !seedIds.has(f.id)),
+    units: state.units.map((u) =>
+      u.floorAreaId && seedIds.has(u.floorAreaId)
+        ? {
+            ...u,
+            floorAreaId: null,
+            updatedAt: new Date().toISOString(),
+          }
+        : u,
+    ),
+  };
+}
+
+function applyDataMigrations(state: AppState): AppState {
+  let s = state;
+  s = restoreStagedUnits(s);
+  s = consolidateDuplicatePlacedUnits(s);
+  s = purgeSeedFloorAreas(s);
+  s = purgeNonTodayBjOrders(s);
+  return s;
+}
+
+/** Nenaudojamos demo grindų zonos — tik tuščias sąrašas. */
 export function defaultFloorAreas(): FloorArea[] {
-  const now = new Date().toISOString();
-  // Top-wall racks ~z=0.75; aisle mid ~5.5; opposite rack ~10.25
-  // Floor piles in front of 8–11 jut deep into aisle (d ≈ 3–4 m)
-  return [
-    {
-      id: "floor-near-8",
-      label: "Ant grindų prie 8",
-      x: 8.2,
-      z: 4.2,
-      w: 2.3,
-      d: 3.4,
-      notes: "seed-v2",
-      orderId: null,
-      createdAt: now,
-    },
-    {
-      id: "floor-near-9",
-      label: "Ant grindų prie 9",
-      x: 11.0,
-      z: 4.5,
-      w: 2.4,
-      d: 3.8,
-      notes: "seed-v2",
-      orderId: null,
-      createdAt: now,
-    },
-    {
-      id: "floor-near-10",
-      label: "Ant grindų prie 10",
-      x: 13.8,
-      z: 4.8,
-      w: 2.6,
-      d: 4.2,
-      notes: "seed-v2",
-      orderId: null,
-      createdAt: now,
-    },
-    {
-      id: "floor-near-11",
-      label: "Ant grindų prie 11",
-      x: 16.4,
-      z: 4.6,
-      w: 2.4,
-      d: 3.9,
-      notes: "seed-v2",
-      orderId: null,
-      createdAt: now,
-    },
-    {
-      id: "floor-near-12",
-      label: "Ant grindų prie 12",
-      x: 18.6,
-      z: 4.0,
-      w: 2.0,
-      d: 3.0,
-      notes: "seed-v2",
-      orderId: null,
-      createdAt: now,
-    },
-    {
-      id: "floor-diled-13-15",
-      label: "DILED aisle (13–15)",
-      x: 22.0,
-      z: 5.0,
-      w: 3.0,
-      d: 2.4,
-      notes: "seed-v2",
-      orderId: null,
-      createdAt: now,
-    },
-    {
-      id: "floor-diled-16-18",
-      label: "DILED aisle (16–18)",
-      x: 24.8,
-      z: 7.0,
-      w: 2.6,
-      d: 2.0,
-      notes: "seed-v2",
-      orderId: null,
-      createdAt: now,
-    },
-  ];
+  return [];
+}
+
+export function normalizeState(state: AppState): AppState {
+  const parsed: AppState = {
+    ...state,
+    locations: state.locations?.length ? state.locations : buildLocations(),
+    orders: state.orders ?? [],
+    shipments: state.shipments ?? [],
+    units: (state.units ?? []).map(migrateUnit),
+    defects: state.defects ?? [],
+    handovers: state.handovers ?? [],
+    floorAreas: state.floorAreas ?? [],
+  };
+  return applyDataMigrations(parsed);
 }
 
 export function loadState(): AppState {
@@ -195,48 +285,21 @@ export function loadState(): AppState {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) {
-      const fresh = empty();
-      fresh.floorAreas = defaultFloorAreas();
-      return fresh;
+      return empty();
     }
     let parsed = JSON.parse(raw) as AppState;
-    if (!parsed.locations?.length) parsed.locations = buildLocations();
-    if (!parsed.floorAreas) parsed.floorAreas = [];
-    // Refresh demo floor seeds (v2 = deep 8–11 protrusion) if only seeds present
-    const onlySeeds =
-      parsed.floorAreas.length === 0 ||
-      parsed.floorAreas.every(
-        (f) =>
-          (!f.orderId && (f.notes === "seed" || f.notes === "seed-v2")) ||
-          f.notes?.startsWith("seed"),
-      );
-    const needsV2 =
-      onlySeeds &&
-      !parsed.floorAreas.some((f) => f.notes === "seed-v2" && (f.d ?? 0) >= 3.5);
-    if (needsV2) {
-      parsed.floorAreas = defaultFloorAreas();
-      try {
-        localStorage.setItem(KEY, JSON.stringify(parsed));
-      } catch {
-        /* ignore */
-      }
-    }
-    parsed.units = (parsed.units ?? []).map(migrateUnit);
-    const consolidated = consolidateDuplicatePlacedUnits(parsed);
-    if (consolidated !== parsed) {
-      parsed = consolidated;
-      try {
-        localStorage.setItem(KEY, JSON.stringify(parsed));
-      } catch {
-        /* ignore */
-      }
-    }
-    parsed.orders = (parsed.orders ?? []).map((o) => ({
+    parsed = normalizeState(parsed);
+    parsed.orders = parsed.orders.map((o) => ({
       ...o,
       qrToken:
         o.qrToken ??
         uuid().replace(/-/g, "").slice(0, 16),
     }));
+    try {
+      localStorage.setItem(KEY, JSON.stringify(parsed));
+    } catch {
+      /* ignore */
+    }
     return parsed;
   } catch {
     return empty();
@@ -246,6 +309,9 @@ export function loadState(): AppState {
 export function saveState(state: AppState) {
   localStorage.setItem(KEY, JSON.stringify(state));
   window.dispatchEvent(new Event("wms-updated"));
+  if (typeof window !== "undefined") {
+    void import("./wms-sync").then((m) => m.scheduleWmsSync(state));
+  }
 }
 
 export function subscribeWms(cb: () => void) {
@@ -321,7 +387,7 @@ export function createOrderFromParsed(
   const fpW =
     place?.footprintW ??
     (occupyAll ? null : span === "half" ? 0.55 : 1.1);
-  const fpD = place?.footprintD ?? (occupyAll ? null : 1.2);
+  const fpD = place?.footprintD ?? (occupyAll ? null : BAY_DEPTH_M);
   const fpX =
     place?.footprintOffsetX ??
     (occupyAll ? null : span === "half" ? (half === "R" ? 0.35 : -0.35) : 0);
@@ -740,21 +806,21 @@ export function assignOrderToShelf(
   const order = state.orders.find((o) => o.id === orderId);
   if (!order) return state;
   const now = new Date().toISOString();
-  const free = state.units.find(
+  const orderUnits = state.units.filter(
     (u) =>
       u.orderId === orderId &&
       u.status !== "issued" &&
-      u.status !== "archived" &&
-      !u.locationId &&
-      !u.floorAreaId,
+      u.status !== "archived",
   );
+  const hasPlaced = orderUnits.some((u) => u.locationId || u.floorAreaId);
+  const free = orderUnits.find((u) => !u.locationId && !u.floorAreaId);
   const fw = opts.footprintW;
   const fd = opts.footprintD;
   const fpX = opts.footprintOffsetX ?? 0;
   const fpZ = opts.footprintOffsetZ ?? 0;
   const span = fw < 0.75 ? ("half" as const) : ("full" as const);
 
-  if (free) {
+  if (free && !hasPlaced) {
     return placeUnit(state, free.id, opts.locationId, {
       footprintW: fw,
       footprintD: fd,
@@ -765,7 +831,6 @@ export function assignOrderToShelf(
     });
   }
 
-  const orderUnits = state.units.filter((u) => u.orderId === orderId);
   const shipment =
     state.shipments.find((s) => s.orderId === orderId) ?? null;
   const idx = orderUnits.length + 1;
@@ -814,19 +879,18 @@ export function assignOrderToFloor(
   const order = state.orders.find((o) => o.id === orderId);
   if (!order) return state;
   const now = new Date().toISOString();
-  const free = state.units.find(
+  const orderUnits = state.units.filter(
     (u) =>
       u.orderId === orderId &&
       u.status !== "issued" &&
-      u.status !== "archived" &&
-      !u.locationId &&
-      !u.floorAreaId,
+      u.status !== "archived",
   );
-  if (free) {
+  const hasPlaced = orderUnits.some((u) => u.locationId || u.floorAreaId);
+  const free = orderUnits.find((u) => !u.locationId && !u.floorAreaId);
+  if (free && !hasPlaced) {
     return placeUnitOnFloor(state, free.id, floorAreaId);
   }
 
-  const orderUnits = state.units.filter((u) => u.orderId === orderId);
   const shipment =
     state.shipments.find((s) => s.orderId === orderId) ?? null;
   const idx = orderUnits.length + 1;
@@ -878,6 +942,7 @@ export function stageOrder(state: AppState, orderId: string): AppState {
       u.orderId === orderId && (u.status === "stored" || u.status === "received")
         ? {
             ...u,
+            previousLocationId: u.locationId,
             locationId: staging?.id ?? u.locationId,
             status: "staged" as UnitStatus,
             updatedAt: now,
@@ -1048,7 +1113,7 @@ export function slotFillAmount(state: AppState): Map<string, number> {
     if (!loc) continue;
     const add =
       u.footprintW && u.footprintW > 0
-        ? Math.min(1, u.footprintW / 1.2)
+        ? Math.min(1, u.footprintW / 1.1)
         : u.slotSpan === "half"
           ? 0.5
           : 1;
@@ -1237,22 +1302,29 @@ export function suggestLocations(
   zone: Zone | null,
   blockStorage: boolean,
   count: number,
+  avoidEntranceRacks = false,
 ): string[] {
   const preferredZone = zone ?? "EXPO";
   const occ = slotOccupancy(state);
   const free = state.locations.filter((l) => {
     if (l.kind !== "pallet") return false;
     if (l.zone !== preferredZone && l.zone !== "LONG") return false;
-    if (l.level === 3 && !blockStorage) return false; // keep L3 for long/rare unless block
+    if (l.level === 3 && !blockStorage) return false;
     return !(occ.get(l.code) || occ.get(l.id));
   });
 
-  // prefer level 1 then 2, group by rack for block storage
+  function rackScore(rack: number): number {
+    if (!avoidEntranceRacks) return rack;
+    if (rack <= 4) return rack + 100;
+    if (rack >= 8 && rack <= 14) return rack - 5;
+    return rack;
+  }
+
   free.sort((a, b) => {
     const la = a.level ?? 9;
     const lb = b.level ?? 9;
     if (la !== lb) return la - lb;
-    return (a.rack ?? 0) - (b.rack ?? 0);
+    return rackScore(a.rack ?? 0) - rackScore(b.rack ?? 0);
   });
 
   if (blockStorage) {

@@ -15,7 +15,7 @@ export default function OrdersPage() {
   const list = useMemo(() => searchOrders(state, q), [state, q]);
 
   return (
-    <div className="space-y-5 py-4 sm:py-6">
+    <div className="mx-auto max-w-3xl w-full space-y-5 py-4 sm:py-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
