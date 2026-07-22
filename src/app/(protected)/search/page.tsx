@@ -274,8 +274,7 @@ export default function SearchPage() {
                   results.findIndex((x) => x.orderId === r.orderId) === idx;
                 return (
                 <Fragment key={r.unitId}>
-                  className="border-t border-stone-100 hover:bg-stone-50/80"
-                >
+                <tr className="border-t border-stone-100 hover:bg-stone-50/80">
                   <td className="px-4 py-3">
                     <p className="font-medium text-stone-900">
                       {r.project || "—"}
