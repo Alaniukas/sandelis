@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { rackFill } from "@/lib/demo-store";
 import { refinePlacementReasonWithGemini } from "@/lib/gemini";
 import { suggestPlacementLocal } from "@/lib/placement";
+import { requireApiUser } from "@/lib/supabase/api-auth";
 import type { AppState, Zone } from "@/lib/types";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  const auth = await requireApiUser();
+  if (auth.response) return auth.response;
+
   try {
     const body = await req.json();
     const { notes, project, zone, colli, state } = body as {
