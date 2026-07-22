@@ -63,7 +63,6 @@ function MapInner() {
   const [markFloor, setMarkFloor] = useState(false);
   const [floorDraft, setFloorDraft] = useState<FloorDraft | null>(null);
   const [shelfDraft, setShelfDraft] = useState<ShelfDraft | null>(null);
-  const [highlightRack, setHighlightRack] = useState<number | null>(null);
   const [hintText, setHintText] = useState<string | null>(null);
   const canvasRef = useRef<Warehouse3DHandle>(null);
 
@@ -71,17 +70,19 @@ function MapInner() {
     rack: number,
     code?: string | null,
     reason?: string,
+    unitId?: string | null,
   ) {
-    setHighlightRack(rack);
     setHintText(
       reason ||
         (code ? `Vieta: ${code}` : `Stelažas ${rack}`),
     );
-    window.setTimeout(() => canvasRef.current?.focusRack(rack), 120);
     window.setTimeout(() => {
-      setHighlightRack(null);
+      if (unitId) canvasRef.current?.focusUnit(unitId);
+      else canvasRef.current?.focusRack(rack, code);
+    }, 200);
+    window.setTimeout(() => {
       setHintText(null);
-    }, 12000);
+    }, 14000);
   }
 
   useEffect(() => {
@@ -113,12 +114,16 @@ function MapInner() {
           loc?.rack ??
           (rackRaw ? Number(rackRaw) : null);
         if (rack != null && Number.isFinite(rack)) {
-          setPreset(rack >= 13 ? "tunnel1617" : rack <= 12 ? "expo" : "diled");
           applyPlacementHint(
             rack,
             params.get("code") || loc?.code,
             label ? `Radai: ${label}` : `Radai prekę`,
+            unitRaw,
           );
+        } else if (unit.floorAreaId) {
+          setHintText(label ? `Radai: ${label}` : `Radai prekę (ant grindų)`);
+          window.setTimeout(() => canvasRef.current?.focusUnit(unitRaw), 200);
+          window.setTimeout(() => setHintText(null), 14000);
         } else if (label) {
           setHintText(`Radai: ${label} (vieta ant grindų)`);
         }
@@ -261,7 +266,6 @@ function MapInner() {
             state={state}
             preset={preset}
             markFloorMode={markFloor}
-            highlightRack={highlightRack}
             onPick={setPick}
             onFloorDraftComplete={(d) => {
               setMarkFloor(false);

@@ -38,6 +38,13 @@ import {
   makeConcreteTexture,
   makeWoodTexture,
 } from "@/lib/warehouse-textures";
+import {
+  footprintPulseMatches,
+  resolveLocationMapFocus,
+  resolveUnitMapFocus,
+  type FootprintPulse,
+  type MapFocus,
+} from "@/lib/map-focus";
 
 export type PickInfo = {
   code: string;
@@ -146,6 +153,20 @@ const COLORS = {
   wrapBlack: "#1a1a1a",
   wrapClear: "#d8e8f0",
 };
+
+function FocusPulse({ w, d, y = 0.05 }: { w: number; d: number; y?: number }) {
+  return (
+    <mesh position={[0, y, 0]}>
+      <boxGeometry args={[w + 0.16, 0.06, d + 0.16]} />
+      <meshBasicMaterial
+        color="#f59e0b"
+        transparent
+        opacity={0.88}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
 
 class CanvasErrorBoundary extends Component<
   { children: ReactNode },
@@ -654,12 +675,14 @@ function FloorAreas({
   onSelect,
   markMode,
   maps,
+  focusPulse,
 }: {
   areas: FloorArea[];
   selectedCode: string | null;
   onSelect: (info: PickInfo) => void;
   markMode: boolean;
   maps: Maps;
+  focusPulse?: FootprintPulse | null;
 }) {
   const skipRef = useSkipRaycastWhen(markMode);
   return (
@@ -667,9 +690,19 @@ function FloorAreas({
       {areas.map((a) => {
         const [lx, lz] = toLocal(a.x, a.z);
         const selected = selectedCode === a.id;
+        const focused =
+          selected &&
+          focusPulse &&
+          !focusPulse.rack &&
+          !focusPulse.smallCode;
         const hasGoods = !!a.orderId || a.notes.includes("seed");
         return (
           <group key={a.id} position={[lx, 0, lz]}>
+            {focused && (
+              <group position={[0, 0.06, 0]}>
+                <FocusPulse w={a.w} d={a.d} y={0.02} />
+              </group>
+            )}
             <mesh
               rotation={[-Math.PI / 2, 0, 0]}
               position={[0, 0.025, 0]}
@@ -812,6 +845,7 @@ function IndustrialRack({
   shelfPreview,
   shelfDrawing,
   highlighted,
+  pulseFootprint,
 }: {
   box: RackBox;
   fillAmt: Map<string, number>;
@@ -839,6 +873,7 @@ function IndustrialRack({
   } | null;
   shelfDrawing: boolean;
   highlighted?: boolean;
+  pulseFootprint?: FootprintPulse | null;
 }) {
   const skipRef = useSkipRaycastWhen(markMode);
   const [lx, lz] = toLocal(box.x, box.z);
@@ -1084,11 +1119,19 @@ function IndustrialRack({
             {/* Existing footprints on this level */}
             {footprints
               .filter((f) => f.level === level)
-              .map((f, fi) => (
+              .map((f, fi) => {
+                const pulsing = footprintPulseMatches(pulseFootprint, {
+                  rack,
+                  level,
+                  offsetX: f.offsetX,
+                  offsetZ: f.offsetZ,
+                });
+                return (
                 <group
                   key={fi}
                   position={[f.offsetX, y + 0.08, f.offsetZ]}
                 >
+                  {pulsing && <FocusPulse w={f.w} d={f.d} y={0.12} />}
                   <mesh position={[0, 0.02, 0]}>
                     <boxGeometry args={[f.w, 0.03, f.d]} />
                     <meshStandardMaterial
@@ -1105,7 +1148,8 @@ function IndustrialRack({
                     maps={maps}
                   />
                 </group>
-              ))}
+              );
+              })}
 
             {/* Live draw preview */}
             {shelfPreview &&
@@ -1188,6 +1232,7 @@ function SmallShelf({
   onShelfPointerDown,
   shelfPreview,
   shelfDrawing,
+  pulseFootprint,
 }: {
   box: SmallShelfBox;
   occ: Map<string, boolean>;
@@ -1207,6 +1252,7 @@ function SmallShelf({
     d: number;
   } | null;
   shelfDrawing: boolean;
+  pulseFootprint?: FootprintPulse | null;
 }) {
   const skipRef = useSkipRaycastWhen(markMode);
   const [lx, lz] = toLocal(box.x, box.z);
@@ -1358,8 +1404,15 @@ function SmallShelf({
         />
       </mesh>
 
-      {footprints.map((f, fi) => (
+      {footprints.map((f, fi) => {
+        const pulsing = footprintPulseMatches(pulseFootprint, {
+          smallCode: box.code,
+          offsetX: f.offsetX,
+          offsetZ: f.offsetZ,
+        });
+        return (
         <group key={fi} position={[f.offsetX, deckY + 0.06, f.offsetZ]}>
+          {pulsing && <FocusPulse w={f.w} d={f.d} y={0.1} />}
           <mesh>
             <boxGeometry args={[f.w, 0.03, f.d]} />
             <meshStandardMaterial
@@ -1369,7 +1422,8 @@ function SmallShelf({
             />
           </mesh>
         </group>
-      ))}
+      );
+      })}
 
       {shelfPreview?.locationCode === box.code && (
         <mesh
@@ -1523,20 +1577,34 @@ function OverDoorBay({
 function CameraRig({
   preset,
   enabled,
-  focusRack,
+  focusCamera,
   focusSeq,
 }: {
   preset: ViewPreset;
   enabled: boolean;
-  focusRack?: number | null;
+  focusCamera?: MapFocus["camera"] | null;
   focusSeq?: number;
 }) {
   const ref = useRef<CameraControlsImpl>(null);
   const { gl } = useThree();
+  const focusSeqRef = useRef(0);
+  focusSeqRef.current = focusSeq ?? 0;
 
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
+    if (focusSeq && focusSeq > 0 && focusCamera) {
+      void c.setLookAt(
+        focusCamera.position[0],
+        focusCamera.position[1],
+        focusCamera.position[2],
+        focusCamera.target[0],
+        focusCamera.target[1],
+        focusCamera.target[2],
+        true,
+      );
+      return;
+    }
     const p = PRESETS[preset];
     void c.setLookAt(
       p.position[0],
@@ -1547,23 +1615,12 @@ function CameraRig({
       p.target[2],
       true,
     );
-  }, [preset]);
-
-  useEffect(() => {
-    if (focusRack == null || !focusSeq) return;
-    const c = ref.current;
-    if (!c) return;
-    const box = getRackLayout().find((b) => b.rack === focusRack);
-    if (!box) return;
-    const [lx, lz] = toLocal(box.x, box.z);
-    const aisleOff = box.wall === "bottom" ? -2.35 : 2.35;
-    void c.setLookAt(lx, 1.75, lz + aisleOff, lx, 1.35, lz, true);
-  }, [focusRack, focusSeq]);
+  }, [preset, focusSeq, focusCamera]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
       const c = ref.current;
-      if (!c) return;
+      if (!c || focusSeqRef.current > 0) return;
       // Jokios „nematomos sienos“ — galima eiti kiaurai tarp 15↔16
       c.boundaryEnclosesCamera = false;
       c.setBoundary(
@@ -1706,8 +1763,9 @@ function Scene({
   shelfDrawing,
   shelfDragMeta,
   highlightRack,
-  focusRack,
+  focusCamera,
   focusSeq,
+  pulseFootprint,
 }: {
   state: AppState;
   selectedCode: string | null;
@@ -1741,8 +1799,9 @@ function Scene({
     deckY: number;
   } | null;
   highlightRack?: number | null;
-  focusRack?: number | null;
+  focusCamera?: MapFocus["camera"] | null;
   focusSeq?: number;
+  pulseFootprint?: FootprintPulse | null;
 }) {
   const layout = useMemo(() => getRackLayout(), []);
   const shelves = useMemo(() => getSmallShelfLayout(), []);
@@ -1833,6 +1892,7 @@ function Scene({
         onSelect={onSelect}
         markMode={markMode}
         maps={maps}
+        focusPulse={pulseFootprint}
       />
 
       {shelfDragMeta && (
@@ -1861,6 +1921,7 @@ function Scene({
           shelfPreview={shelfPreview}
           shelfDrawing={shelfDrawing}
           highlighted={highlightRack === box.rack}
+          pulseFootprint={pulseFootprint}
         />
       ))}
 
@@ -1877,13 +1938,14 @@ function Scene({
           onShelfPointerDown={onShelfPointerDown}
           shelfPreview={shelfPreview}
           shelfDrawing={shelfDrawing}
+          pulseFootprint={pulseFootprint}
         />
       ))}
 
       <CameraRig
         preset={preset}
         enabled={!markMode && !shelfDrawing}
-        focusRack={focusRack}
+        focusCamera={focusCamera}
         focusSeq={focusSeq}
       />
     </>
@@ -1892,7 +1954,8 @@ function Scene({
 
 export type Warehouse3DHandle = {
   enterFullscreen: () => void;
-  focusRack: (rack: number) => void;
+  focusRack: (rack: number, locationCode?: string | null) => void;
+  focusUnit: (unitId: string) => void;
 };
 
 export const Warehouse3D = forwardRef<
@@ -1920,7 +1983,7 @@ export const Warehouse3D = forwardRef<
 ) {
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [focusRackNum, setFocusRackNum] = useState<number | null>(null);
+  const [mapFocus, setMapFocus] = useState<MapFocus | null>(null);
   const [focusSeq, setFocusSeq] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [coarsePointer, setCoarsePointer] = useState(false);
@@ -1978,18 +2041,38 @@ export const Warehouse3D = forwardRef<
     }
   }, [markFloorMode]);
 
-  useImperativeHandle(ref, () => ({
-    enterFullscreen: () => {
-      const el = wrapRef.current;
-      if (!el) return;
-      if (document.fullscreenElement) void document.exitFullscreen();
-      else void el.requestFullscreen?.();
-    },
-    focusRack: (rack: number) => {
-      setFocusRackNum(rack);
-      setFocusSeq((n) => n + 1);
-    },
-  }));
+  useImperativeHandle(
+    ref,
+    () => ({
+      enterFullscreen: () => {
+        const el = wrapRef.current;
+        if (!el) return;
+        if (document.fullscreenElement) void document.exitFullscreen();
+        else void el.requestFullscreen?.();
+      },
+      focusRack: (rack: number, locationCode?: string | null) => {
+        const f = resolveLocationMapFocus(state, rack, locationCode);
+        if (!f) return;
+        setMapFocus(f);
+        if (f.selectedCode) setSelectedCode(f.selectedCode);
+        setFocusSeq((n) => n + 1);
+      },
+      focusUnit: (unitId: string) => {
+        const f = resolveUnitMapFocus(state, unitId);
+        if (!f) return;
+        setMapFocus(f);
+        if (f.selectedCode) setSelectedCode(f.selectedCode);
+        setFocusSeq((n) => n + 1);
+      },
+    }),
+    [state],
+  );
+
+  useEffect(() => {
+    if (!mapFocus) return;
+    const t = window.setTimeout(() => setMapFocus(null), 14000);
+    return () => window.clearTimeout(t);
+  }, [mapFocus, focusSeq]);
 
   function clampToMax(
     lx: number,
@@ -2187,9 +2270,10 @@ export const Warehouse3D = forwardRef<
               shelfPreview={shelfPreview}
               shelfDrawing={shelfDrawingUi}
               shelfDragMeta={shelfDragMeta}
-              highlightRack={highlightRack ?? focusRackNum}
-              focusRack={focusRackNum}
+              highlightRack={highlightRack ?? mapFocus?.highlightRack ?? null}
+              focusCamera={mapFocus?.camera ?? null}
               focusSeq={focusSeq}
+              pulseFootprint={mapFocus?.pulse ?? null}
               onSelect={(info) => {
                 setSelectedCode(info.code);
                 onPick?.(info);
