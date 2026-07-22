@@ -2,8 +2,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { v4 as uuid } from "uuid";
 import type { CustomField, ParsedDocument, ParsedLine } from "./types";
 
-/** Override via GEMINI_MODEL env (e.g. gemini-2.5-flash-lite). */
-const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+/** Override via GEMINI_MODEL env. See https://ai.google.dev/gemini-api/docs/models */
+const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-3.5-flash";
 
 function getGeminiModel(key: string) {
   const genAI = new GoogleGenerativeAI(key);
