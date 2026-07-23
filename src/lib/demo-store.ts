@@ -67,7 +67,14 @@ function migrateUnit(u: Unit): Unit {
   };
 }
 
-/** Seniau kiekviena dėžė kūrė atskirą unit — sujungiam į vieną per užsakymą. */
+/** Skirtingos vietos tame pačiame aukšte — atskiri unitai (ne sujungti). */
+function unitPlacementKey(u: Unit): string {
+  const ox = Math.round((u.footprintOffsetX ?? 0) * 20) / 20;
+  const oz = Math.round((u.footprintOffsetZ ?? 0) * 20) / 20;
+  return `${u.locationId ?? ""}|${u.floorAreaId ?? ""}|${u.status}|${ox}|${oz}`;
+}
+
+/** Seniau kiekviena dėžė kūrė atskirą unit — sujungiam tik tikras dublikatus toje pačioje vietoje. */
 function consolidateDuplicatePlacedUnits(state: AppState): AppState {
   const byOrder = new Map<string, Unit[]>();
   for (const u of state.units) {
@@ -86,7 +93,7 @@ function consolidateDuplicatePlacedUnits(state: AppState): AppState {
 
     const byLoc = new Map<string, Unit[]>();
     for (const u of group) {
-      const key = `${u.locationId ?? ""}|${u.floorAreaId ?? ""}|${u.status}`;
+      const key = unitPlacementKey(u);
       const list = byLoc.get(key) ?? [];
       list.push(u);
       byLoc.set(key, list);
@@ -198,38 +205,6 @@ function restoreStagedUnits(state: AppState): AppState {
   return changed ? { ...state, units } : state;
 }
 
-function purgeNonTodayBjOrders(state: AppState): AppState {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-
-  const keepOrderIds = new Set(
-    state.orders
-      .filter((o) => {
-        const created = new Date(o.createdAt);
-        return created >= todayStart && /^BJ-/i.test(o.orderCode.trim());
-      })
-      .map((o) => o.id),
-  );
-
-  const units = state.units
-    .filter((u) => keepOrderIds.has(u.orderId) && !u.floorAreaId);
-
-  return {
-    ...state,
-    orders: state.orders.filter((o) => keepOrderIds.has(o.id)),
-    shipments: state.shipments.filter(
-      (s) => s.orderId && keepOrderIds.has(s.orderId),
-    ),
-    units,
-    defects: state.defects.filter((d) => {
-      const ship = state.shipments.find((s) => s.id === d.shipmentId);
-      return ship?.orderId && keepOrderIds.has(ship.orderId);
-    }),
-    handovers: state.handovers.filter((h) => keepOrderIds.has(h.orderId)),
-    floorAreas: [],
-  };
-}
-
 function purgeSeedFloorAreas(state: AppState): AppState {
   const seedIds = new Set(
     state.floorAreas
@@ -257,7 +232,6 @@ function applyDataMigrations(state: AppState): AppState {
   s = restoreStagedUnits(s);
   s = consolidateDuplicatePlacedUnits(s);
   s = purgeSeedFloorAreas(s);
-  s = purgeNonTodayBjOrders(s);
   return s;
 }
 
@@ -812,7 +786,6 @@ export function assignOrderToShelf(
       u.status !== "issued" &&
       u.status !== "archived",
   );
-  const hasPlaced = orderUnits.some((u) => u.locationId || u.floorAreaId);
   const free = orderUnits.find((u) => !u.locationId && !u.floorAreaId);
   const fw = opts.footprintW;
   const fd = opts.footprintD;
@@ -820,7 +793,7 @@ export function assignOrderToShelf(
   const fpZ = opts.footprintOffsetZ ?? 0;
   const span = fw < 0.75 ? ("half" as const) : ("full" as const);
 
-  if (free && !hasPlaced) {
+  if (free) {
     return placeUnit(state, free.id, opts.locationId, {
       footprintW: fw,
       footprintD: fd,
@@ -885,9 +858,8 @@ export function assignOrderToFloor(
       u.status !== "issued" &&
       u.status !== "archived",
   );
-  const hasPlaced = orderUnits.some((u) => u.locationId || u.floorAreaId);
   const free = orderUnits.find((u) => !u.locationId && !u.floorAreaId);
-  if (free && !hasPlaced) {
+  if (free) {
     return placeUnitOnFloor(state, free.id, floorAreaId);
   }
 

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { WmsProvider } from "@/components/WmsProvider";
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
@@ -10,7 +11,7 @@ export default async function ProtectedLayout({
   const env = getSupabaseEnv();
   if (!env) {
     if (process.env.NODE_ENV === "development") {
-      return children;
+      return <WmsProvider>{children}</WmsProvider>;
     }
     redirect("/login?error=config");
   }
@@ -28,5 +29,5 @@ export default async function ProtectedLayout({
     redirect("/login");
   }
 
-  return children;
+  return <WmsProvider>{children}</WmsProvider>;
 }

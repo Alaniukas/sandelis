@@ -22,6 +22,7 @@ import {
   locationCode,
   ROOM,
   BAY_DEPTH_M,
+  RACK_LEVEL_Y,
   type RackBox,
   type SmallShelfBox,
 } from "@/lib/locations";
@@ -1030,9 +1031,8 @@ function IndustrialRack({
   const skipRef = useSkipRaycastWhen(markMode);
   const [lx, lz] = toLocal(box.x, box.z);
   const { w, d, rack, wall } = box;
-  const uprightH = 3.35;
-  // Level 1 = first elevated beam (~chest), not floor — frees aisle
-  const beamYs = [1.08, 2.08, 3.05];
+  const uprightH = 2.48;
+  const beamYs = RACK_LEVEL_Y;
   const uw = 0.08;
   const badgeColor = highlighted
     ? "#f59e0b"
@@ -1089,7 +1089,7 @@ function IndustrialRack({
             />
           </mesh>
           {/* perforation hint — dark dots via thin boxes */}
-          {[0.4, 0.7, 1.0, 1.3, 1.6, 1.9, 2.2, 2.5, 2.8].map((yy, si) => (
+          {[0.38, 1.08, 2.08].map((yy, si) => (
             <mesh key={si} position={[uw * 0.52, yy, 0]}>
               <boxGeometry args={[0.015, 0.04, 0.035]} />
               <meshStandardMaterial color="#0f2a4a" />
@@ -1106,32 +1106,20 @@ function IndustrialRack({
         </group>
       ))}
 
-      {/* Side-frame braces (depth plane) — NOT across bay face / 2nd level */}
+      {/* Vienas kryžminis rėmas (be apatinės „grindų lentynos“) */}
       {([-w / 2 + 0.06, w / 2 - 0.06] as const).map((px) => (
-        <group key={`br-${px}`}>
-          <mesh
-            position={[px, uprightH * 0.48, 0]}
-            rotation={[Math.PI / 5.5, 0, 0]}
-          >
-            <boxGeometry args={[0.028, 0.028, d * 0.82]} />
-            <meshStandardMaterial
-              color={COLORS.brace}
-              metalness={0.45}
-              roughness={0.45}
-            />
-          </mesh>
-          <mesh
-            position={[px, uprightH * 0.55, 0]}
-            rotation={[-Math.PI / 5.5, 0, 0]}
-          >
-            <boxGeometry args={[0.028, 0.028, d * 0.82]} />
-            <meshStandardMaterial
-              color={COLORS.brace}
-              metalness={0.45}
-              roughness={0.45}
-            />
-          </mesh>
-        </group>
+        <mesh
+          key={`br-${px}`}
+          position={[px, uprightH * 0.58, 0]}
+          rotation={[-Math.PI / 5.5, 0, 0]}
+        >
+          <boxGeometry args={[0.028, 0.028, d * 0.82]} />
+          <meshStandardMaterial
+            color={COLORS.brace}
+            metalness={0.45}
+            roughness={0.45}
+          />
+        </mesh>
       ))}
 
       {wholeRack && (
@@ -1157,12 +1145,12 @@ function IndustrialRack({
             document.body.style.cursor = "default";
           }}
         >
-          <mesh position={[0, 1.08, 0]} castShadow>
+          <mesh position={[0, beamYs[0], 0]} castShadow>
             <boxGeometry args={[w * 0.9, 0.12, d * 0.8]} />
             <meshStandardMaterial color={COLORS.pallet} roughness={0.95} />
           </mesh>
-          <mesh position={[0, 2.15, 0]} castShadow>
-            <boxGeometry args={[w * 0.78, 1.85, d * 0.62]} />
+          <mesh position={[0, beamYs[1] + 0.55, 0]} castShadow>
+            <boxGeometry args={[w * 0.78, 1.05, d * 0.62]} />
             <meshStandardMaterial
               color={COLORS.wrapBlack}
               roughness={0.4}
@@ -1172,7 +1160,7 @@ function IndustrialRack({
           {wholeRackPick?.label && (
             <GoodsLabel
               text={wholeRackPick.label}
-              y={2.55}
+              y={beamYs[1] + 1.05}
               onPick={() => wholeRackPick && onSelect(wholeRackPick)}
             />
           )}
@@ -1181,9 +1169,11 @@ function IndustrialRack({
 
       {[1, 2, 3].map((level, li) => {
         const y = beamYs[li];
+        const isGround = level === 1;
         return (
           <group key={level}>
-            {([-d / 2 + 0.05, d / 2 - 0.05] as const).map((bz, bi) => (
+            {!isGround &&
+              ([-d / 2 + 0.05, d / 2 - 0.05] as const).map((bz, bi) => (
               <group key={bi} position={[0, y, bz]}>
                 <mesh castShadow>
                   <boxGeometry args={[w - 0.12, 0.1, 0.065]} />
@@ -1216,21 +1206,23 @@ function IndustrialRack({
               </group>
             ))}
 
-            {/* wooden deck planks */}
-            {[-0.32, -0.16, 0, 0.16, 0.32].map((ox, i) => (
+            {/* wooden deck planks (aukštai 2–3) */}
+            {!isGround &&
+              [-0.32, -0.16, 0, 0.16, 0.32].map((ox, i) => (
               <mesh key={i} position={[ox * (w * 0.75), y + 0.03, 0]} castShadow>
                 <boxGeometry args={[0.1, 0.025, d - 0.18]} />
                 <meshStandardMaterial map={maps.wood} roughness={0.88} />
               </mesh>
             ))}
 
-            {/* Drawable deck — beveik visas 1.5 m gylis */}
+            {/* Žymėjimo zona — 1 aukštas ant žemės, 2–3 ant sijų */}
             {!wholeRack && (
               <mesh
-                position={[0, y + 0.055, 0]}
+                position={[0, y + (isGround ? 0.02 : 0.055), 0]}
                 onPointerDown={(e) => {
                   if (markMode || !onShelfPointerDown) return;
                   e.stopPropagation();
+                  const deckY = y + (isGround ? 0.02 : 0.055);
                   onShelfPointerDown({
                     rack,
                     level,
@@ -1240,7 +1232,7 @@ function IndustrialRack({
                     maxD: d * DECK_D_FRAC,
                     rackLx: lx,
                     rackLz: lz,
-                    deckY: y + 0.055,
+                    deckY,
                     clientX: e.nativeEvent.clientX,
                     clientY: e.nativeEvent.clientY,
                   });
@@ -1258,7 +1250,9 @@ function IndustrialRack({
                     rack,
                     level,
                     side: "K",
-                    label: `Stelažas ${rack} · aukštas ${level}`,
+                    label: isGround
+                      ? `Stelažas ${rack} · aukštas 1 (prie žemės)`
+                      : `Stelažas ${rack} · aukštas ${level}`,
                   });
                 }}
                 onPointerOver={() => {
@@ -1269,7 +1263,7 @@ function IndustrialRack({
                 }}
               >
                 <boxGeometry
-                  args={[w * DECK_W_FRAC, 0.04, d * DECK_D_FRAC]}
+                  args={[w * DECK_W_FRAC, isGround ? 0.03 : 0.04, d * DECK_D_FRAC]}
                 />
                 <meshStandardMaterial
                   color={
@@ -1277,10 +1271,12 @@ function IndustrialRack({
                       (fillAmt.get(locationCode(rack, "D", level)) ?? 0) >
                     0.01
                       ? COLORS.occupied
-                      : COLORS.free
+                      : isGround
+                        ? "#86efac"
+                        : COLORS.free
                   }
                   transparent
-                  opacity={0.22}
+                  opacity={isGround ? 0.32 : 0.22}
                 />
               </mesh>
             )}
@@ -1358,7 +1354,7 @@ function IndustrialRack({
       })}
 
       <group
-        position={[0, 2.15, aisleZ]}
+        position={[0, (beamYs[1] + beamYs[2]) / 2, aisleZ]}
         rotation={[0, badgeRotY, 0]}
         onClick={(e) => {
           if (markMode) return;

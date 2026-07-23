@@ -362,7 +362,7 @@ export function NewShipmentModal({
       upsertManufacturerProfile(doc.source, profileNotes);
     }
     let state = createOrderFromParsed(
-      loadState(),
+      wmsState,
       payload,
       occupyEntireRack ? 1 : Math.max(1, colli),
       file?.name || incomingShipment?.documentName || "rankinis",

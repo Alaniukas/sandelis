@@ -18,9 +18,9 @@ export async function GET() {
   }
 
   const { data, error } = await supabase
-    .from("wms_app_state")
+    .from("wms_shared_state")
     .select("payload, updated_at")
-    .eq("user_id", auth.user!.id)
+    .eq("id", "shared")
     .maybeSingle();
 
   if (error) {
@@ -53,14 +53,14 @@ export async function PUT(req: Request) {
 
   const now = new Date().toISOString();
   const { data, error } = await supabase
-    .from("wms_app_state")
+    .from("wms_shared_state")
     .upsert(
       {
-        user_id: auth.user!.id,
+        id: "shared",
         payload,
         updated_at: now,
       },
-      { onConflict: "user_id" },
+      { onConflict: "id" },
     )
     .select("updated_at")
     .single();

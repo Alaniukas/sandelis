@@ -24,6 +24,13 @@ export function zoneForRack(n: number): Zone {
 /** Stelažo bay gylis (m) — visi industrial rack */
 export const BAY_DEPTH_M = 1.5;
 
+/** Industrial stelažų aukštų aukščiai (m): 1 = prie žemės, 2–3 = sijos */
+export const RACK_LEVEL_Y = [0.38, 1.08, 2.08] as const;
+
+export function rackLevelY(level: number): number {
+  return RACK_LEVEL_Y[level - 1] ?? RACK_LEVEL_Y[0];
+}
+
 export function locationCode(
   rack: number,
   side: "K" | "D",
@@ -59,7 +66,7 @@ export function buildLocations(): Location[] {
           side,
           level,
           kind: "pallet",
-          label: `${isLong ? "LONG " : ""}${rack} ${side} aukštas ${level}`,
+          label: `${isLong ? "LONG " : ""}${rack} ${side} aukštas ${level}${level === 1 ? " (prie žemės)" : ""}`,
           rackSize: size,
         });
       }

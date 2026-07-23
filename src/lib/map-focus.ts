@@ -1,9 +1,8 @@
-import { BAY_DEPTH_M, getRackLayout, getSmallShelfLayout } from "./locations";
+import { BAY_DEPTH_M, getRackLayout, getSmallShelfLayout, rackLevelY } from "./locations";
 import type { AppState } from "./types";
 
 const CX = 15;
 const CZ = 5.5;
-const BEAM_Y = [1.08, 2.08, 3.05] as const;
 
 export type FootprintPulse = {
   rack?: number;
@@ -150,7 +149,7 @@ export function resolveUnitMapFocus(
     if (!box) return null;
     const [lx, lz] = toLocal(box.x, box.z);
     const level = loc.level;
-    const beamY = BEAM_Y[level - 1] ?? 1.08;
+    const beamY = rackLevelY(level);
     const ox = unit.footprintOffsetX ?? 0;
     const oz = unit.footprintOffsetZ ?? 0;
     const w = unit.footprintW ?? 1.1;

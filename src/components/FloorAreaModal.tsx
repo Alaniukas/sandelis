@@ -8,7 +8,7 @@ import {
   deleteFloorArea,
   loadState,
 } from "@/lib/demo-store";
-import { formatOrderOption } from "@/lib/ui-labels";
+import { OrderPicker } from "@/components/OrderPicker";
 import { useWms } from "@/lib/use-wms";
 
 export type FloorDraft = {
@@ -136,20 +136,11 @@ export function FloorAreaModal({
               Pasirinkti iš jau sukurtų
             </label>
             {mode === "existing" && (
-              <select
-                className="field mt-1"
+              <OrderPicker
+                orders={activeOrders}
                 value={orderId}
-                onChange={(e) => setOrderId(e.target.value)}
-              >
-                {activeOrders.length === 0 && (
-                  <option value="">Nėra aktyvių užsakymų</option>
-                )}
-                {activeOrders.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {formatOrderOption(o)}
-                  </option>
-                ))}
-              </select>
+                onChange={setOrderId}
+              />
             )}
           </div>
 
