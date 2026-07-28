@@ -51,6 +51,10 @@ begin
     ('DILED-16/17-A-2', 'DILED', 16, 'D', 2, 'small_shelf', 'Smulkūs 16/17 prie sienos 2'),
     ('DILED-16/17-A-3', 'DILED', 16, 'D', 3, 'small_shelf', 'Smulkūs 16/17 prie sienos 3'),
     ('DILED-16/17-A-4', 'DILED', 16, 'D', 4, 'small_shelf', 'Smulkūs 16/17 prie sienos 4'),
+    ('LONG-EXIT-OVER-1', 'LONG', null, null, 1, 'small_shelf', 'Virš išėjimo · aukštas 1'),
+    ('LONG-EXIT-OVER-2', 'LONG', null, null, 2, 'small_shelf', 'Virš išėjimo · aukštas 2'),
+    ('EXPO-ENTRANCE-OVER-1', 'EXPO', null, null, 1, 'small_shelf', 'Virš įėjimo · aukštas 1'),
+    ('EXPO-ENTRANCE-OVER-2', 'EXPO', null, null, 2, 'small_shelf', 'Virš įėjimo · aukštas 2'),
     ('STAGING-0-K-1', 'STAGING', 0, 'K', 1, 'special', 'STAGING'),
     ('BROKAS-0-K-1', 'BROKAS', 0, 'K', 1, 'special', 'BROKAS');
 end $$;

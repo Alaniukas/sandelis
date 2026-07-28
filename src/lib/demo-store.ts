@@ -227,8 +227,17 @@ function purgeSeedFloorAreas(state: AppState): AppState {
   };
 }
 
+function mergeMissingLocations(state: AppState): AppState {
+  const seed = buildLocations();
+  const existing = new Set(state.locations.map((l) => l.id));
+  const missing = seed.filter((l) => !existing.has(l.id));
+  if (missing.length === 0) return state;
+  return { ...state, locations: [...state.locations, ...missing] };
+}
+
 function applyDataMigrations(state: AppState): AppState {
   let s = state;
+  s = mergeMissingLocations(s);
   s = restoreStagedUnits(s);
   s = consolidateDuplicatePlacedUnits(s);
   s = purgeSeedFloorAreas(s);
@@ -451,6 +460,43 @@ export function createExpectedArrival(
   const next = {
     ...state,
     shipments: [shipment, ...state.shipments],
+  };
+  saveState(next);
+  return next;
+}
+
+/** Pašalinti laukiamą atvykimą (be susietų dėžių) */
+export function deleteExpectedArrival(
+  state: AppState,
+  shipmentId: string,
+): AppState {
+  const shipment = state.shipments.find((s) => s.id === shipmentId);
+  if (!shipment || shipment.status !== "expected") return state;
+  const hasUnits = state.units.some((u) => u.shipmentId === shipmentId);
+  if (hasUnits) return state;
+  const next = {
+    ...state,
+    shipments: state.shipments.filter((s) => s.id !== shipmentId),
+  };
+  saveState(next);
+  return next;
+}
+
+/** Pažymėti, kad atvyko, bet niekur nepriskirta (be pilnos registracijos) */
+export function markExpectedArrivalReceived(
+  state: AppState,
+  shipmentId: string,
+): AppState {
+  const shipment = state.shipments.find((s) => s.id === shipmentId);
+  if (!shipment || shipment.status !== "expected") return state;
+  const now = new Date().toISOString();
+  const next = {
+    ...state,
+    shipments: state.shipments.map((s) =>
+      s.id === shipmentId
+        ? { ...s, status: "arrived" as const, arrivedAt: now }
+        : s,
+    ),
   };
   saveState(next);
   return next;

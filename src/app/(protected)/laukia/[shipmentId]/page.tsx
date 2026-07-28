@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import {
+  deleteExpectedArrival,
+  loadState,
+  markExpectedArrivalReceived,
+} from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
 
 export default function IncomingPage() {
@@ -79,6 +84,34 @@ export default function IncomingPage() {
           }
         >
           Atvyko — registruoti sandėlyje
+        </button>
+        <button
+          type="button"
+          className="btn-secondary w-full sm:w-auto"
+          onClick={() => {
+            if (
+              window.confirm(
+                "Pažymėti, kad atvyko, bet dar nepadėta į vietą?",
+              )
+            ) {
+              markExpectedArrivalReceived(loadState(), shipmentId);
+              router.push("/");
+            }
+          }}
+        >
+          Atvyko — be vietos
+        </button>
+        <button
+          type="button"
+          className="btn-secondary w-full text-red-800 sm:w-auto"
+          onClick={() => {
+            if (window.confirm("Pašalinti šį įrašą iš laukiamų atvykimų?")) {
+              deleteExpectedArrival(loadState(), shipmentId);
+              router.push("/");
+            }
+          }}
+        >
+          Pašalinti
         </button>
         <Link href="/map?legacy=1" className="btn-secondary w-full sm:w-auto">
           Tik žymėti vietą (senas užsakymas)

@@ -17,12 +17,14 @@ import type CameraControlsImpl from "camera-controls";
 import * as THREE from "three";
 import {
   getDoorGaps,
+  getOverDoorShelfLayout,
   getRackLayout,
   getSmallShelfLayout,
   locationCode,
   ROOM,
   BAY_DEPTH_M,
   RACK_LEVEL_Y,
+  type OverDoorShelfBox,
   type RackBox,
   type SmallShelfBox,
 } from "@/lib/locations";
@@ -1649,10 +1651,39 @@ function SmallShelf({
 function OverDoorBay({
   door,
   maps,
+  shelves,
+  occ,
+  fillAmt,
+  footprintsByCode,
+  onSelect,
+  markMode,
+  onShelfPointerDown,
+  shelfPreview,
+  shelfDrawing,
+  pulseFootprint,
 }: {
   door: ReturnType<typeof getDoorGaps>[number];
   maps: Maps;
+  shelves: OverDoorShelfBox[];
+  occ: Map<string, boolean>;
+  fillAmt: Map<string, number>;
+  footprintsByCode: Map<string, FootprintDraw[]>;
+  onSelect: (info: PickInfo) => void;
+  markMode: boolean;
+  onShelfPointerDown?: (opts: ShelfPointerDownOpts) => void;
+  shelfPreview: {
+    rack?: number;
+    level: number;
+    locationCode?: string;
+    offsetX: number;
+    offsetZ: number;
+    w: number;
+    d: number;
+  } | null;
+  shelfDrawing: boolean;
+  pulseFootprint?: FootprintPulse | null;
 }) {
+  const skipRef = useSkipRaycastWhen(markMode);
   const [lx] = toLocal(door.x, 0);
   const zWall = door.z - CZ;
   const inward = door.wall === "bottom" ? -1 : 1;
@@ -1664,7 +1695,7 @@ function OverDoorBay({
   const halfW = door.width / 2;
 
   return (
-    <group position={[lx, 0, zCenter]}>
+    <group position={[lx, 0, zCenter]} ref={skipRef}>
       {([-halfW + 0.06, halfW - 0.06] as const).map((px, i) => (
         <group key={i} position={[px, 0, 0]}>
           <mesh position={[0, 0.18, -inward * (depth / 2 - 0.06)]}>
@@ -1727,6 +1758,118 @@ function OverDoorBay({
           <meshBasicMaterial color="#22c55e" />
         </mesh>
       )}
+
+      {shelves.map((shelf) => {
+        const busy =
+          occ.get(shelf.code) === true ||
+          (fillAmt.get(shelf.code) ?? 0) > 0.01;
+        const footprints = footprintsByCode.get(shelf.code) ?? [];
+        const deckY = shelf.deckY - 0; // local Y within group at zCenter
+
+        return (
+          <group key={shelf.code}>
+            <mesh
+              position={[0, deckY, 0]}
+              onPointerDown={(e) => {
+                if (markMode || !onShelfPointerDown) return;
+                e.stopPropagation();
+                onShelfPointerDown({
+                  level: shelf.level,
+                  locationCode: shelf.code,
+                  localX: e.point.x - lx,
+                  localZ: e.point.z - zCenter,
+                  maxW: shelf.w * 0.95,
+                  maxD: shelf.d * 0.95,
+                  rackLx: lx,
+                  rackLz: zCenter,
+                  deckY,
+                  clientX: e.nativeEvent.clientX,
+                  clientY: e.nativeEvent.clientY,
+                });
+              }}
+              onClick={(e) => {
+                if (markMode) return;
+                if (shelfDrawing) {
+                  e.stopPropagation();
+                  return;
+                }
+                e.stopPropagation();
+                onSelect({
+                  code: shelf.code,
+                  kind: "small_shelf",
+                  level: shelf.level,
+                  label: shelf.code,
+                });
+              }}
+              onPointerOver={() => {
+                if (!markMode) document.body.style.cursor = "crosshair";
+              }}
+              onPointerOut={() => {
+                if (!shelfDrawing) document.body.style.cursor = "default";
+              }}
+            >
+              <boxGeometry args={[shelf.w, 0.04, shelf.d]} />
+              <meshStandardMaterial
+                color={busy ? COLORS.occupied : COLORS.free}
+                transparent
+                opacity={0.28}
+              />
+            </mesh>
+
+            {footprints.map((f, fi) => {
+              const pulsing = footprintPulseMatches(pulseFootprint, {
+                smallCode: shelf.code,
+                offsetX: f.offsetX,
+                offsetZ: f.offsetZ,
+              });
+              return (
+                <group key={fi} position={[f.offsetX, deckY + 0.06, f.offsetZ]}>
+                  {pulsing && <FocusPulse w={f.w} d={f.d} y={0.1} />}
+                  <mesh>
+                    <boxGeometry args={[f.w, 0.03, f.d]} />
+                    <meshStandardMaterial
+                      color={COLORS.occupied}
+                      transparent
+                      opacity={0.5}
+                    />
+                  </mesh>
+                  <PalletCargo
+                    w={Math.max(0.2, f.w * 0.8)}
+                    d={Math.max(0.2, f.d * 0.8)}
+                    h={0.22}
+                    variant={0}
+                    maps={maps}
+                  />
+                  <GoodsLabel
+                    text={f.label}
+                    y={0.38}
+                    onPick={() => onSelect(footprintPick(f))}
+                  />
+                  <CargoHitTarget
+                    w={Math.max(0.2, f.w * 0.8)}
+                    d={Math.max(0.2, f.d * 0.8)}
+                    h={0.22}
+                    onPick={() => onSelect(footprintPick(f))}
+                  />
+                </group>
+              );
+            })}
+
+            {shelfPreview?.locationCode === shelf.code && (
+              <mesh
+                position={[
+                  shelfPreview.offsetX,
+                  deckY + 0.07,
+                  shelfPreview.offsetZ,
+                ]}
+              >
+                <boxGeometry args={[shelfPreview.w, 0.04, shelfPreview.d]} />
+                <meshStandardMaterial color="#3b82f6" transparent opacity={0.5} />
+              </mesh>
+            )}
+          </group>
+        );
+      })}
     </group>
   );
 }
@@ -1961,6 +2104,7 @@ function Scene({
 }) {
   const layout = useMemo(() => getRackLayout(), []);
   const shelves = useMemo(() => getSmallShelfLayout(), []);
+  const overDoorShelves = useMemo(() => getOverDoorShelfLayout(), []);
   const doors = useMemo(() => getDoorGaps(), []);
   const fillAmt = useMemo(() => slotFillAmount(state), [state]);
   const fill = useMemo(() => rackFill(state), [state]);
@@ -2067,7 +2211,21 @@ function Scene({
       />
       <Walls doors={doors} maps={maps} />
       {doors.map((door) => (
-        <OverDoorBay key={`over-${door.id}`} door={door} maps={maps} />
+        <OverDoorBay
+          key={`over-${door.id}`}
+          door={door}
+          maps={maps}
+          shelves={overDoorShelves.filter((s) => s.doorId === door.id)}
+          occ={occ}
+          fillAmt={fillAmt}
+          footprintsByCode={footprintsBySmall}
+          onSelect={onSelect}
+          markMode={markMode}
+          onShelfPointerDown={onShelfPointerDown}
+          shelfPreview={shelfPreview}
+          shelfDrawing={shelfDrawing}
+          pulseFootprint={pulseFootprint}
+        />
       ))}
       <FloorAreas
         areas={state.floorAreas ?? []}

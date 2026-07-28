@@ -71,9 +71,11 @@ export function ShelfFootprintModal({
     const zone =
       draft.rack != null
         ? zoneForRack(draft.rack)
-        : code.startsWith("DILED")
-          ? "DILED"
-          : "EXPO";
+        : code.startsWith("LONG")
+          ? "LONG"
+          : code.startsWith("DILED")
+            ? "DILED"
+            : "EXPO";
     return {
       locationId: loc?.id ?? code,
       code,

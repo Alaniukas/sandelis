@@ -118,6 +118,25 @@ export function buildLocations(): Location[] {
     });
   }
 
+  for (const door of ["exit", "entrance"] as const) {
+    for (let level = 1; level <= 2; level++) {
+      const code =
+        door === "exit"
+          ? `LONG-EXIT-OVER-${level}`
+          : `EXPO-ENTRANCE-OVER-${level}`;
+      locs.push({
+        id: code,
+        code,
+        zone: door === "exit" ? "LONG" : "EXPO",
+        rack: null,
+        side: null,
+        level,
+        kind: "small_shelf",
+        label: `Virš ${door === "exit" ? "išėjimo" : "įėjimo"} · aukštas ${level}`,
+      });
+    }
+  }
+
   locs.push(
     {
       id: "STAGING-0-K-1",
@@ -167,6 +186,19 @@ export interface SmallShelfBox {
   d: number;
   level: number;
   row: "left" | "tunnelA" | "tunnelB" | "inside1617";
+}
+
+/** Stelažai virš EXIT / ĮĖJIMO durų (2 aukštai) */
+export interface OverDoorShelfBox {
+  id: string;
+  code: string;
+  doorId: "entrance" | "exit";
+  level: number;
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+  deckY: number;
 }
 
 export interface DoorGap {
@@ -366,6 +398,39 @@ export function getSmallShelfLayout(): SmallShelfBox[] {
         });
         idx++;
       }
+    }
+  }
+
+  return shelves;
+}
+
+/** 3D pozicijos stelažams virš EXIT / ĮĖJIMO (sutampa su OverDoorBay geometrija) */
+export function getOverDoorShelfLayout(): OverDoorShelfBox[] {
+  const shelves: OverDoorShelfBox[] = [];
+  const depth = 1.35;
+  const beamYs = [2.55, 3.4];
+
+  for (const door of getDoorGaps()) {
+    const inward = door.wall === "bottom" ? -1 : 1;
+    const zCenter = door.z + inward * (depth / 2 + 0.05);
+
+    for (let i = 0; i < beamYs.length; i++) {
+      const level = i + 1;
+      const code =
+        door.id === "exit"
+          ? `LONG-EXIT-OVER-${level}`
+          : `EXPO-ENTRANCE-OVER-${level}`;
+      shelves.push({
+        id: code,
+        code,
+        doorId: door.id,
+        level,
+        x: door.x,
+        z: zCenter,
+        w: door.width - 0.1,
+        d: depth - 0.2,
+        deckY: beamYs[i] + 0.055,
+      });
     }
   }
 

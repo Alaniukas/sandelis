@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { IncomingArrivalModal } from "@/components/IncomingArrivalModal";
-import { getDashboardSummary } from "@/lib/demo-store";
+import {
+  deleteExpectedArrival,
+  getDashboardSummary,
+  loadState,
+  markExpectedArrivalReceived,
+} from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
 
 export function DashboardCards() {
@@ -126,7 +131,7 @@ export function DashboardCards() {
             ) : (
               summary.arrivals.map((a) => (
                 <div key={a.shipmentId} className="list-row">
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="font-medium text-stone-900">{a.project}</p>
                     <p className="text-xs text-stone-500">
                       {a.carrier}
@@ -135,21 +140,53 @@ export function DashboardCards() {
                         : ""}
                     </p>
                   </div>
-                  {a.orderId ? (
-                    <Link
-                      href={`/orders/${a.orderId}`}
-                      className="shrink-0 text-sm font-semibold text-stone-700 underline"
+                  <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center">
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-emerald-800 underline"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            "Pažymėti, kad prekės atvyko, bet dar nepadėtos sandėlyje?",
+                          )
+                        ) {
+                          markExpectedArrivalReceived(loadState(), a.shipmentId);
+                        }
+                      }}
                     >
-                      Atidaryti
-                    </Link>
-                  ) : (
-                    <Link
-                      href={`/laukia/${a.shipmentId}`}
-                      className="shrink-0 text-sm font-semibold text-stone-700 underline"
+                      Atvyko
+                    </button>
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-red-700 underline"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            "Pašalinti šį laukiamą atvykimą iš sąrašo?",
+                          )
+                        ) {
+                          deleteExpectedArrival(loadState(), a.shipmentId);
+                        }
+                      }}
                     >
-                      Peržiūrėti
-                    </Link>
-                  )}
+                      Pašalinti
+                    </button>
+                    {a.orderId ? (
+                      <Link
+                        href={`/orders/${a.orderId}`}
+                        className="text-sm font-semibold text-stone-700 underline"
+                      >
+                        Atidaryti
+                      </Link>
+                    ) : (
+                      <Link
+                        href={`/laukia/${a.shipmentId}`}
+                        className="text-sm font-semibold text-stone-700 underline"
+                      >
+                        Peržiūrėti
+                      </Link>
+                    )}
+                  </div>
                 </div>
               ))
             )}
