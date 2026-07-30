@@ -60,11 +60,12 @@ export async function pushWmsStateNow(state: AppState) {
 
 async function pushWmsState(state: AppState) {
   try {
+    const payload = stripLargeBinaryFromState(state);
     const res = await fetch("/api/wms-state", {
       method: "PUT",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: state }),
+      body: JSON.stringify({ payload }),
     });
     if (!res.ok) return;
     await res.json();
@@ -94,4 +95,32 @@ export async function hydrateFromRemote(
   }
 
   return remote;
+}
+
+/** Nuimti didelius data URL prieš sinchronizaciją — priedai saugomi Storage. */
+function stripLargeBinaryFromState(state: AppState): AppState {
+  return {
+    ...state,
+    shipments: state.shipments.map((s) => {
+      if (!s.attachmentDataUrl) return s;
+      if (s.attachmentUrl) {
+        const { attachmentDataUrl: _, ...rest } = s;
+        return rest;
+      }
+      return s;
+    }),
+    defects: state.defects.map((d) => {
+      if (!d.photoDataUrl) return d;
+      return { ...d, photoDataUrl: null };
+    }),
+    orders: state.orders.map((o) => {
+      if (!o.notePhotoUrls?.length) return o;
+      const hasDataUrls = o.notePhotoUrls.some((u) => u.startsWith("data:"));
+      if (!hasDataUrls) return o;
+      return {
+        ...o,
+        notePhotoUrls: o.notePhotoUrls.filter((u) => !u.startsWith("data:")),
+      };
+    }),
+  };
 }

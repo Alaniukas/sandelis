@@ -235,12 +235,36 @@ function mergeMissingLocations(state: AppState): AppState {
   return { ...state, locations: [...state.locations, ...missing] };
 }
 
+function extractAttachmentStoragePath(url: string): string | null {
+  const bucket = "wms-attachments";
+  const marker = `/${bucket}/`;
+  const idx = url.indexOf(marker);
+  if (idx >= 0) return url.slice(idx + marker.length).split("?")[0] ?? null;
+  const publicMarker = `/object/public/${bucket}/`;
+  const pubIdx = url.indexOf(publicMarker);
+  if (pubIdx >= 0)
+    return url.slice(pubIdx + publicMarker.length).split("?")[0] ?? null;
+  return null;
+}
+
+function migrateShipmentAttachments(state: AppState): AppState {
+  const shipments = state.shipments.map((s) => {
+    if (s.attachmentStoragePath || !s.attachmentUrl) return s;
+    const path = extractAttachmentStoragePath(s.attachmentUrl);
+    if (!path) return s;
+    return { ...s, attachmentStoragePath: path };
+  });
+  if (shipments === state.shipments) return state;
+  return { ...state, shipments };
+}
+
 function applyDataMigrations(state: AppState): AppState {
   let s = state;
   s = mergeMissingLocations(s);
   s = restoreStagedUnits(s);
   s = consolidateDuplicatePlacedUnits(s);
   s = purgeSeedFloorAreas(s);
+  s = migrateShipmentAttachments(s);
   return s;
 }
 
@@ -430,6 +454,8 @@ export function createExpectedArrival(
     carrier?: string;
     attachmentName?: string | null;
     attachmentDataUrl?: string | null;
+    attachmentUrl?: string | null;
+    attachmentStoragePath?: string | null;
   },
 ): AppState {
   const now = new Date().toISOString();
@@ -455,6 +481,8 @@ export function createExpectedArrival(
       confidence: 1,
     },
     attachmentDataUrl: data.attachmentDataUrl || null,
+    attachmentUrl: data.attachmentUrl || null,
+    attachmentStoragePath: data.attachmentStoragePath || null,
     createdAt: now,
   };
   const next = {
@@ -531,7 +559,12 @@ export function copyIncomingAttachmentToShipment(
   toShipmentId: string,
 ): AppState {
   const src = state.shipments.find((s) => s.id === fromShipmentId);
-  if (!src?.attachmentDataUrl) return state;
+  if (
+    !src?.attachmentDataUrl &&
+    !src?.attachmentUrl &&
+    !src?.attachmentStoragePath
+  )
+    return state;
   const next = {
     ...state,
     shipments: state.shipments.map((s) =>
@@ -539,9 +572,84 @@ export function copyIncomingAttachmentToShipment(
         ? {
             ...s,
             attachmentDataUrl: src.attachmentDataUrl,
+            attachmentUrl: src.attachmentUrl,
+            attachmentStoragePath: src.attachmentStoragePath,
             documentName: s.documentName || src.documentName,
           }
         : s,
+    ),
+  };
+  saveState(next);
+  return next;
+}
+
+export function setShipmentAttachment(
+  state: AppState,
+  shipmentId: string,
+  data: {
+    attachmentUrl?: string | null;
+    attachmentStoragePath?: string | null;
+    attachmentDataUrl?: string | null;
+    documentName?: string | null;
+  },
+): AppState {
+  const next = {
+    ...state,
+    shipments: state.shipments.map((s) =>
+      s.id === shipmentId
+        ? {
+            ...s,
+            attachmentUrl: data.attachmentUrl ?? s.attachmentUrl,
+            attachmentStoragePath:
+              data.attachmentStoragePath ?? s.attachmentStoragePath,
+            attachmentDataUrl: data.attachmentDataUrl ?? s.attachmentDataUrl,
+            documentName: data.documentName ?? s.documentName,
+          }
+        : s,
+    ),
+  };
+  saveState(next);
+  return next;
+}
+
+export function updateOrder(
+  state: AppState,
+  orderId: string,
+  patch: Partial<
+    Pick<
+      Order,
+      | "orderCode"
+      | "project"
+      | "client"
+      | "zone"
+      | "notes"
+      | "blockStorage"
+      | "customFields"
+      | "notePhotoUrls"
+    >
+  >,
+): AppState {
+  const now = new Date().toISOString();
+  const next = {
+    ...state,
+    orders: state.orders.map((o) =>
+      o.id === orderId ? { ...o, ...patch, updatedAt: now } : o,
+    ),
+  };
+  saveState(next);
+  return next;
+}
+
+export function updateUnit(
+  state: AppState,
+  unitId: string,
+  patch: Partial<Pick<Unit, "labelTitle" | "notes">>,
+): AppState {
+  const now = new Date().toISOString();
+  const next = {
+    ...state,
+    units: state.units.map((u) =>
+      u.id === unitId ? { ...u, ...patch, updatedAt: now } : u,
     ),
   };
   saveState(next);
@@ -1458,6 +1566,10 @@ export function getDashboardSummary(state: AppState): DashboardSummary {
 }
 
 export interface InventorySearchFilters {
+  project?: string;
+  client?: string;
+  orderCode?: string;
+  query?: string;
   manufacturer?: string;
   arrivedFrom?: string;
   arrivedTo?: string;
@@ -1495,12 +1607,17 @@ function inDateRange(
   return true;
 }
 
+function fieldMatches(blob: string, needle: string | undefined): boolean {
+  const q = needle?.trim().toLowerCase();
+  if (!q) return true;
+  return blob.includes(q);
+}
+
 export function searchInventory(
   state: AppState,
-  query: string,
+  _query: string,
   filters: InventorySearchFilters = {},
 ): InventorySearchResult[] {
-  const q = query.trim().toLowerCase();
   const results: InventorySearchResult[] = [];
 
   for (const unit of state.units) {
@@ -1550,7 +1667,11 @@ export function searchInventory(
       h.unitIds.includes(unit.id),
     );
     const arrivedAt =
-      shipment?.arrivedAt || shipment?.expectedAt || shipment?.createdAt || null;
+      shipment?.arrivedAt ||
+      shipment?.expectedAt ||
+      shipment?.createdAt ||
+      order.createdAt ||
+      null;
     const issuedAt = handover?.issuedAt ?? null;
 
     if (filters.manufacturer) {
@@ -1566,14 +1687,22 @@ export function searchInventory(
       order.client,
       order.notes,
       unit.labelTitle,
+      unit.notes,
       manufacturer,
       locationLabel,
       locationCode,
+      ...(order.customFields ?? []).map((f) => `${f.label} ${f.value}`),
+      ...(shipment?.parsedJson?.customFields ?? []).map(
+        (f) => `${f.label} ${f.value}`,
+      ),
     ]
       .join(" ")
       .toLowerCase();
 
-    if (q && !blob.includes(q)) continue;
+    if (!fieldMatches(blob, filters.project)) continue;
+    if (!fieldMatches(blob, filters.client)) continue;
+    if (!fieldMatches(blob, filters.orderCode)) continue;
+    if (!fieldMatches(blob, filters.query)) continue;
 
     results.push({
       unitId: unit.id,

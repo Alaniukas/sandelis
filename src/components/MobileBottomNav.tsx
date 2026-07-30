@@ -5,16 +5,56 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { IncomingArrivalModal } from "@/components/IncomingArrivalModal";
 import { NewShipmentModal } from "@/components/NewShipmentModal";
+import { NavTabIcon, type NavTabId } from "@/components/NavTabIcons";
 import { signOut } from "@/lib/supabase/logout";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { PlacementSuggestion } from "@/lib/placement";
 
-const tabs = [
-  { href: "/", label: "Pradžia", match: (p: string) => p === "/" },
-  { href: "/map", label: "Sandėlis", match: (p: string) => p === "/map" || p.startsWith("/vizualizacija") },
-  { href: "/search", label: "Paieška", match: (p: string) => p === "/search" },
-  { href: "/orders", label: "Užsakymai", match: (p: string) => p === "/orders" || p.startsWith("/orders/") },
+const tabs: {
+  href: string;
+  label: string;
+  icon: NavTabId;
+  match: (p: string) => boolean;
+}[] = [
+  { href: "/", label: "Pradžia", icon: "home", match: (p) => p === "/" },
+  {
+    href: "/map",
+    label: "Sandėlis",
+    icon: "map",
+    match: (p) => p === "/map" || p.startsWith("/vizualizacija"),
+  },
+  { href: "/search", label: "Paieška", icon: "search", match: (p) => p === "/search" },
+  {
+    href: "/orders",
+    label: "Užsakymai",
+    icon: "orders",
+    match: (p) => p === "/orders" || p.startsWith("/orders/"),
+  },
 ];
+
+function NavTabLink({
+  href,
+  label,
+  icon,
+  active,
+}: {
+  href: string;
+  label: string;
+  icon: NavTabId;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[10px] font-semibold transition touch-manipulation ${
+        active ? "text-stone-900" : "text-stone-500"
+      }`}
+    >
+      <NavTabIcon id={icon} active={active} />
+      {label}
+    </Link>
+  );
+}
 
 export function MobileBottomNav() {
   const path = usePathname();
@@ -46,7 +86,7 @@ export function MobileBottomNav() {
   return (
     <>
       {menuOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <button
             type="button"
             aria-label="Uždaryti"
@@ -115,28 +155,20 @@ export function MobileBottomNav() {
       )}
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200/90 bg-[#f3efe8]/95 backdrop-blur-md md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200/90 bg-[#f3efe8]/95 backdrop-blur-md lg:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         aria-label="Mobili navigacija"
       >
         <div className="mx-auto flex h-[3.75rem] max-w-lg items-stretch px-1">
-          {tabs.slice(0, 2).map((t) => {
-            const active = t.match(path);
-            return (
-              <Link
-                key={t.href}
-                href={t.href}
-                className={`flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[10px] font-semibold transition touch-manipulation ${
-                  active ? "text-stone-900" : "text-stone-500"
-                }`}
-              >
-                <span
-                  className={`h-1 w-8 rounded-full ${active ? "bg-stone-900" : "bg-transparent"}`}
-                />
-                {t.label}
-              </Link>
-            );
-          })}
+          {tabs.slice(0, 2).map((t) => (
+            <NavTabLink
+              key={t.href}
+              href={t.href}
+              label={t.label}
+              icon={t.icon}
+              active={t.match(path)}
+            />
+          ))}
 
           <button
             type="button"
@@ -149,23 +181,15 @@ export function MobileBottomNav() {
             </span>
           </button>
 
-          {tabs.slice(2).map((t) => {
-            const active = t.match(path);
-            return (
-              <Link
-                key={t.href}
-                href={t.href}
-                className={`flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[10px] font-semibold transition touch-manipulation ${
-                  active ? "text-stone-900" : "text-stone-500"
-                }`}
-              >
-                <span
-                  className={`h-1 w-8 rounded-full ${active ? "bg-stone-900" : "bg-transparent"}`}
-                />
-                {t.label}
-              </Link>
-            );
-          })}
+          {tabs.slice(2).map((t) => (
+            <NavTabLink
+              key={t.href}
+              href={t.href}
+              label={t.label}
+              icon={t.icon}
+              active={t.match(path)}
+            />
+          ))}
         </div>
       </nav>
 

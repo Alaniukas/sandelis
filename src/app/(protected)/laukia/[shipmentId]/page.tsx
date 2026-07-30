@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { shipmentAttachmentHref } from "@/lib/attachments";
 import {
   deleteExpectedArrival,
   loadState,
@@ -64,9 +65,9 @@ export default function IncomingPage() {
         </div>
       )}
 
-      {shipment.attachmentDataUrl && (
+      {shipmentAttachmentHref(shipment) && (
         <a
-          href={shipment.attachmentDataUrl}
+          href={shipmentAttachmentHref(shipment)!}
           target="_blank"
           rel="noopener noreferrer"
           className="btn-secondary inline-flex"

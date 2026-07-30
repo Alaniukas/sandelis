@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { collectOrderDetailBlocks } from "@/lib/order-info";
+import { mediaViewHref } from "@/lib/attachments";
 import { useWms } from "@/lib/use-wms";
 
 export function OrderInfoSection({
@@ -14,12 +15,14 @@ export function OrderInfoSection({
   className?: string;
 }) {
   const state = useWms();
+  const order = state.orders.find((o) => o.id === orderId);
   const blocks = useMemo(
     () => collectOrderDetailBlocks(state, orderId),
     [state, orderId],
   );
+  const photos = order?.notePhotoUrls ?? [];
 
-  if (!blocks.length) {
+  if (!blocks.length && !photos.length) {
     return (
       <div
         id={id}
@@ -43,6 +46,22 @@ export function OrderInfoSection({
               {b.title}
             </dt>
             <dd className="mt-1 whitespace-pre-wrap text-stone-800">{b.body}</dd>
+          </div>
+        ))}
+        {photos.map((url, i) => (
+          <div key={url} className="sm:col-span-2 lg:col-span-3">
+            <dt className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+              Nuotrauka {i + 1}
+            </dt>
+            <dd className="mt-1">
+              <a href={mediaViewHref(url)} target="_blank" rel="noopener noreferrer">
+                <img
+                  src={url}
+                  alt=""
+                  className="max-h-40 rounded-lg object-cover ring-1 ring-stone-200"
+                />
+              </a>
+            </dd>
           </div>
         ))}
       </dl>

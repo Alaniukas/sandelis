@@ -8,12 +8,16 @@ import {
   copyIncomingAttachmentToShipment,
   createOrderFromParsed,
   loadState,
+  setShipmentAttachment,
 } from "@/lib/demo-store";
+import { uploadAttachment } from "@/lib/attachments";
+import { pushWmsStateNow } from "@/lib/wms-sync";
 import { locationCode, zoneForRack } from "@/lib/locations";
 import { mergeUniqueNotes } from "@/lib/order-info";
 import { suggestPlacementLocal, type PlacementSuggestion } from "@/lib/placement";
 import { Modal } from "@/components/ui/Modal";
-import { SuggestField } from "@/components/ui/FormFields";
+import { NumberField, SuggestField } from "@/components/ui/FormFields";
+import { shipmentAttachmentHref } from "@/lib/attachments";
 import { HintLabel } from "@/components/ui/HintLabel";
 import { getFormSuggestions } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
@@ -340,7 +344,7 @@ export function NewShipmentModal({
     };
   }
 
-  function save() {
+  async function save() {
     if (!doc.project.trim() && !doc.orderCode.trim() && !doc.client.trim()) {
       setError("Įrašyk bent projektą, kodą arba klientą");
       return;
@@ -380,6 +384,20 @@ export function NewShipmentModal({
         );
       }
     }
+    if (file && !fromIncomingShipmentId) {
+      const uploaded = await uploadAttachment(file);
+      if (uploaded.storageUrl) {
+        const shipment = state.shipments.find((s) => s.orderId === order.id);
+        if (shipment) {
+          state = setShipmentAttachment(state, shipment.id, {
+            attachmentUrl: uploaded.storageUrl,
+            attachmentStoragePath: uploaded.storagePath,
+            documentName: file.name,
+          });
+        }
+      }
+    }
+    void pushWmsStateNow(state);
     const show = suggestion;
     const didPlace = placeNow;
     const rackForMap =
@@ -395,11 +413,34 @@ export function NewShipmentModal({
       return;
     }
     if (rackForMap != null && didPlace) {
+      if (onShowPlacement) {
+        const locId =
+          selectedLocationId ||
+          (typeof manualRack === "number"
+            ? locationCode(manualRack, manualSide, manualLevel)
+            : "");
+        onShowPlacement({
+          locationId: locId || String(rackForMap),
+          code: codeForMap || locId || String(rackForMap),
+          rack: rackForMap,
+          level: manualLevel,
+          side: manualSide,
+          reason: doc.project || doc.orderCode || "Naujas atvykimas",
+          occupyEntireRack,
+          zone:
+            doc.zone ??
+            (typeof manualRack === "number"
+              ? zoneForRack(manualRack)
+              : "EXPO"),
+        });
+        return;
+      }
       router.push(
         `/map?rack=${rackForMap}&code=${encodeURIComponent(codeForMap || "")}&hint=1`,
       );
       return;
     }
+    if (onShowPlacement) return;
     router.push(`/orders/${order.id}`);
   }
 
@@ -511,9 +552,9 @@ export function NewShipmentModal({
         {incomingShipment && (
           <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
             <p className="font-medium">Iš „Atkeliauja“ užrašo</p>
-            {incomingShipment.attachmentDataUrl && (
+            {incomingShipment && shipmentAttachmentHref(incomingShipment) && (
               <a
-                href={incomingShipment.attachmentDataUrl}
+                href={shipmentAttachmentHref(incomingShipment)!}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1 inline-block text-xs font-semibold underline"
@@ -641,15 +682,12 @@ export function NewShipmentModal({
               </select>
             </Field>
             {!occupyEntireRack && (
-              <Field label="Dėžių / palečių sk. (bendras)">
-                <input
-                  type="number"
-                  min={1}
-                  className="field"
-                  value={colli}
-                  onChange={(e) => setColli(Number(e.target.value) || 1)}
-                />
-              </Field>
+              <NumberField
+                label="Dėžių / palečių sk. (bendras)"
+                min={1}
+                value={colli}
+                onChange={setColli}
+              />
             )}
           </div>
           <Field label="Pastabos">
@@ -770,14 +808,11 @@ export function NewShipmentModal({
                   value={l.name}
                   onChange={(e) => updateLine(i, { name: e.target.value })}
                 />
-                <input
-                  type="number"
-                  className="field"
+                <NumberField
+                  className="sm:col-span-1"
                   min={0}
                   value={l.qty}
-                  onChange={(e) =>
-                    updateLine(i, { qty: Number(e.target.value) || 0 })
-                  }
+                  onChange={(v) => updateLine(i, { qty: v })}
                 />
                 <input
                   className="field"
@@ -902,38 +937,23 @@ export function NewShipmentModal({
                 </label>
                 {!occupyEntireRack && (
                   <div className="grid grid-cols-2 gap-3">
-                    <label className="block text-sm">
-                      <span className="text-stone-600">Plotis (m)</span>
-                      <input
-                        type="number"
-                        min={0.3}
-                        step={0.05}
-                        className="field mt-1"
-                        value={footprintW}
-                        onChange={(e) =>
-                          setFootprintW(Number(e.target.value) || 0.3)
-                        }
-                      />
-                    </label>
-                    <label className="block text-sm">
-                      <span className="text-stone-600">Gylis (m)</span>
-                      <input
-                        type="number"
-                        min={0.3}
-                        max={1.5}
-                        step={0.05}
-                        className="field mt-1"
-                        value={footprintD}
-                        onChange={(e) =>
-                          setFootprintD(
-                            Math.min(
-                              1.5,
-                              Math.max(0.3, Number(e.target.value) || 0.3),
-                            ),
-                          )
-                        }
-                      />
-                    </label>
+                    <NumberField
+                      label="Plotis (m)"
+                      min={0.3}
+                      step={0.05}
+                      value={footprintW}
+                      onChange={setFootprintW}
+                    />
+                    <NumberField
+                      label="Gylis (m)"
+                      min={0.3}
+                      max={1.5}
+                      step={0.05}
+                      value={footprintD}
+                      onChange={(v) =>
+                        setFootprintD(Math.min(1.5, Math.max(0.3, v)))
+                      }
+                    />
                   </div>
                 )}
                 <label className="flex items-center gap-2 text-sm">

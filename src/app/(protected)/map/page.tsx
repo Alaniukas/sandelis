@@ -296,7 +296,7 @@ function MapInner() {
   }
 
   return (
-    <div className="-mx-3 -mb-[calc(4.75rem+env(safe-area-inset-bottom))] flex h-[calc(100dvh-3rem-4.75rem-env(safe-area-inset-bottom))] flex-col gap-1 overflow-hidden sm:mx-0 md:mb-0 md:h-[calc(100dvh-3.5rem)] md:gap-2 md:py-2">
+    <div className="-mx-3 -mb-[calc(4.75rem+env(safe-area-inset-bottom))] flex h-[calc(100dvh-3rem-4.75rem-env(safe-area-inset-bottom))] flex-col gap-1 overflow-hidden sm:mx-0 lg:mb-0 lg:h-[calc(100dvh-3.5rem)] md:gap-2 md:py-2">
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 sm:gap-2 md:px-0">
         <div className="mr-auto min-w-0 hidden sm:block">
           <h1 className="font-display text-lg font-semibold tracking-tight sm:text-xl md:text-2xl">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { LtDatePicker } from "@/components/ui/LtDatePicker";
 import { useMounted } from "@/lib/use-mounted";
 
@@ -133,3 +133,72 @@ export function SuggestField({
 }
 
 export { LtDatePicker as DateField };
+
+type NumberFieldProps = {
+  label?: string;
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  className?: string;
+  inputClassName?: string;
+};
+
+export function NumberField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  className,
+  inputClassName,
+}: NumberFieldProps) {
+  const [text, setText] = useState(String(value));
+
+  useEffect(() => {
+    setText(String(value));
+  }, [value]);
+
+  function commit(raw: string) {
+    let n = Number(raw);
+    if (!raw.trim() || Number.isNaN(n)) {
+      n = min ?? 0;
+    }
+    if (min != null) n = Math.max(min, n);
+    if (max != null) n = Math.min(max, n);
+    if (step != null && step > 0) {
+      n = Math.round(n / step) * step;
+    }
+    onChange(n);
+    setText(String(n));
+  }
+
+  const field = (
+    <input
+      type="text"
+      inputMode="decimal"
+      className={inputClassName ?? "field"}
+      value={text}
+      onChange={(e) => {
+        const v = e.target.value;
+        if (v === "" || /^-?\d*[.,]?\d*$/.test(v)) {
+          setText(v.replace(",", "."));
+        }
+      }}
+      onBlur={() => commit(text)}
+    />
+  );
+
+  if (!label) return <div className={className}>{field}</div>;
+
+  return (
+    <label className={`block ${className ?? ""}`}>
+      <span className="mb-1 block text-sm font-medium text-stone-700">
+        {label}
+      </span>
+      {field}
+    </label>
+  );
+}

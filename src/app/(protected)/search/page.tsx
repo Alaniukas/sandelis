@@ -16,45 +16,93 @@ import { useWms } from "@/lib/use-wms";
 import { unitStatusLabel } from "@/lib/ui-labels";
 import { OrderInfoSection } from "@/components/OrderInfoSection";
 
+type SearchFilters = {
+  project: string;
+  client: string;
+  orderCode: string;
+  query: string;
+  manufacturer: string;
+  arrivedFrom: string;
+  arrivedTo: string;
+  issuedFrom: string;
+  issuedTo: string;
+};
+
+const EMPTY_FILTERS: SearchFilters = {
+  project: "",
+  client: "",
+  orderCode: "",
+  query: "",
+  manufacturer: "",
+  arrivedFrom: "",
+  arrivedTo: "",
+  issuedFrom: "",
+  issuedTo: "",
+};
+
 export default function SearchPage() {
   const state = useWms();
   const router = useRouter();
   const suggestions = useMemo(() => getFormSuggestions(state), [state]);
 
-  const [project, setProject] = useState("");
-  const [client, setClient] = useState("");
-  const [orderCode, setOrderCode] = useState("");
-  const [query, setQuery] = useState("");
-  const [manufacturer, setManufacturer] = useState("");
-  const [arrivedFrom, setArrivedFrom] = useState("");
-  const [arrivedTo, setArrivedTo] = useState("");
-  const [issuedFrom, setIssuedFrom] = useState("");
-  const [issuedTo, setIssuedTo] = useState("");
+  const [draft, setDraft] = useState<SearchFilters>(EMPTY_FILTERS);
+  const [applied, setApplied] = useState<SearchFilters>(EMPTY_FILTERS);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
-  const combinedQuery = useMemo(() => {
-    return [project, client, orderCode, query].filter(Boolean).join(" ");
-  }, [project, client, orderCode, query]);
+  function setTextFilter<K extends keyof SearchFilters>(key: K, value: string) {
+    setDraft((d) => ({ ...d, [key]: value }));
+    setApplied((a) => ({ ...a, [key]: value }));
+    setExpandedOrderId(null);
+  }
+
+  function setDateFilter<K extends keyof SearchFilters>(key: K, value: string) {
+    setDraft((d) => ({ ...d, [key]: value }));
+  }
+
+  const hasDateDraft =
+    draft.arrivedFrom ||
+    draft.arrivedTo ||
+    draft.issuedFrom ||
+    draft.issuedTo;
+
+  const datesDirty =
+    draft.arrivedFrom !== applied.arrivedFrom ||
+    draft.arrivedTo !== applied.arrivedTo ||
+    draft.issuedFrom !== applied.issuedFrom ||
+    draft.issuedTo !== applied.issuedTo;
 
   const results = useMemo(
     () =>
-      searchInventory(state, combinedQuery, {
-        manufacturer: manufacturer || undefined,
-        arrivedFrom: arrivedFrom || undefined,
-        arrivedTo: arrivedTo || undefined,
-        issuedFrom: issuedFrom || undefined,
-        issuedTo: issuedTo || undefined,
+      searchInventory(state, "", {
+        project: applied.project || undefined,
+        client: applied.client || undefined,
+        orderCode: applied.orderCode || undefined,
+        query: applied.query || undefined,
+        manufacturer: applied.manufacturer || undefined,
+        arrivedFrom: applied.arrivedFrom || undefined,
+        arrivedTo: applied.arrivedTo || undefined,
+        issuedFrom: applied.issuedFrom || undefined,
+        issuedTo: applied.issuedTo || undefined,
       }),
-    [
-      state,
-      combinedQuery,
-      manufacturer,
-      arrivedFrom,
-      arrivedTo,
-      issuedFrom,
-      issuedTo,
-    ],
+    [state, applied],
   );
+
+  function applySearch() {
+    setApplied({ ...draft });
+    setExpandedOrderId(null);
+  }
+
+  function clearDates() {
+    const next = {
+      ...draft,
+      arrivedFrom: "",
+      arrivedTo: "",
+      issuedFrom: "",
+      issuedTo: "",
+    };
+    setDraft(next);
+    setApplied(next);
+  }
 
   function showOnMap(
     rack: number | null,
@@ -95,22 +143,22 @@ export default function SearchPage() {
           <SuggestField
             className="sm:col-span-2"
             label="Projektas"
-            value={project}
-            onChange={setProject}
+            value={draft.project}
+            onChange={(v) => setTextFilter("project", v)}
             suggestions={suggestions.projects}
             placeholder="Pvz. Paneriu 56 — rašyk ir pasirink iš sąrašo"
           />
           <SuggestField
             label="Klientas"
-            value={client}
-            onChange={setClient}
+            value={draft.client}
+            onChange={(v) => setTextFilter("client", v)}
             suggestions={suggestions.clients}
             placeholder="Vardas, įmonė, adresas…"
           />
           <SuggestField
             label="Užsakymo kodas"
-            value={orderCode}
-            onChange={setOrderCode}
+            value={draft.orderCode}
+            onChange={(v) => setTextFilter("orderCode", v)}
             suggestions={suggestions.orderCodes}
             placeholder="BJ-…, I-1079-01…"
           />
@@ -121,52 +169,67 @@ export default function SearchPage() {
             <input
               className="field"
               placeholder="Prekės pavadinimas, pastabos…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={draft.query}
+              onChange={(e) => setTextFilter("query", e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") applySearch();
+              }}
             />
           </label>
           <ComboField
             label="Gamintojas"
-            value={manufacturer}
-            onChange={setManufacturer}
+            value={draft.manufacturer}
+            onChange={(v) => setTextFilter("manufacturer", v)}
             options={suggestions.manufacturers}
             placeholder="Pasirink arba įrašyk naują"
           />
           <DateField
             label="Atvykimo data nuo"
-            value={arrivedFrom}
-            onChange={setArrivedFrom}
+            value={draft.arrivedFrom}
+            onChange={(v) => setDateFilter("arrivedFrom", v)}
           />
           <DateField
             label="Atvykimo data iki"
-            value={arrivedTo}
-            onChange={setArrivedTo}
+            value={draft.arrivedTo}
+            onChange={(v) => setDateFilter("arrivedTo", v)}
           />
           <DateField
             label="Išvežimo data nuo"
-            value={issuedFrom}
-            onChange={setIssuedFrom}
+            value={draft.issuedFrom}
+            onChange={(v) => setDateFilter("issuedFrom", v)}
           />
           <DateField
             label="Išvežimo data iki"
-            value={issuedTo}
-            onChange={setIssuedTo}
+            value={draft.issuedTo}
+            onChange={(v) => setDateFilter("issuedTo", v)}
           />
         </div>
-        {(arrivedFrom || arrivedTo || issuedFrom || issuedTo) && (
-          <button
-            type="button"
-            className="text-sm font-medium text-stone-600 underline hover:text-stone-900"
-            onClick={() => {
-              setArrivedFrom("");
-              setArrivedTo("");
-              setIssuedFrom("");
-              setIssuedTo("");
-            }}
-          >
-            Išvalyti datas — ieškoti visų
-          </button>
-        )}
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          {(hasDateDraft || datesDirty) && (
+            <button
+              type="button"
+              className="btn-primary w-full sm:w-auto"
+              onClick={applySearch}
+            >
+              Ieškoti
+            </button>
+          )}
+          {hasDateDraft && (
+            <button
+              type="button"
+              className="text-sm font-medium text-stone-600 underline hover:text-stone-900"
+              onClick={clearDates}
+            >
+              Išvalyti datas
+            </button>
+          )}
+          {datesDirty && (
+            <span className="text-xs text-amber-800">
+              Datos pakeistos — paspausk „Ieškoti“
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">

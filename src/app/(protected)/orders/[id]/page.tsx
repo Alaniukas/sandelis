@@ -10,6 +10,7 @@ import { unitNotesVisibleInOrderInfo } from "@/lib/order-info";
 import { unitStatusLabel, zoneLabel } from "@/lib/ui-labels";
 import { suggestPlacementLocal } from "@/lib/placement";
 import { OrderInfoSection } from "@/components/OrderInfoSection";
+import { OrderEditSection } from "@/components/OrderEditSection";
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -185,6 +186,8 @@ export default function OrderDetailPage() {
           Pažymėti, kad pasiėmė
         </button>
       </div>
+
+      <OrderEditSection orderId={order.id} />
 
       <OrderInfoSection orderId={order.id} id="info" />
 

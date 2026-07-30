@@ -23,7 +23,7 @@ export function AppChrome({ children }: { children: ReactNode }) {
   return (
     <>
       <AppNav />
-      <main className="mx-auto max-w-7xl px-3 pb-[calc(4.75rem+env(safe-area-inset-bottom))] sm:px-4 md:pb-[env(safe-area-inset-bottom)]">
+      <main className="mx-auto max-w-7xl px-3 pb-[calc(4.75rem+env(safe-area-inset-bottom))] sm:px-4 lg:pb-[env(safe-area-inset-bottom)]">
         {children}
       </main>
       <MobileBottomNav />

@@ -46,6 +46,8 @@ export interface Order {
   client: string;
   zone: Zone | null;
   notes: string;
+  /** Nuotraukos prie pastabų (URL iš saugyklos) */
+  notePhotoUrls?: string[];
   blockStorage: boolean;
   status: "active" | "archived";
   customFields?: CustomField[];
@@ -69,6 +71,10 @@ export interface Shipment {
   parsedJson: ParsedDocument | null;
   /** Įkeltas PDF / el. laiškas (demo: data URL) */
   attachmentDataUrl?: string | null;
+  /** Priedas saugykloje — veikia visuose įrenginiuose */
+  attachmentUrl?: string | null;
+  /** Kelias Storage (signed URL generavimui) */
+  attachmentStoragePath?: string | null;
   customFields?: CustomField[];
   createdAt: string;
 }

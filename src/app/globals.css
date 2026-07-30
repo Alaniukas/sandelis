@@ -284,6 +284,21 @@ textarea:focus,
   border-color: #a8a29e;
 }
 
+/* Planchetai — didesni mygtukai ir apatinė navigacija */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .btn-primary,
+  .btn-secondary {
+    min-height: 2.75rem;
+    padding: 0.65rem 1rem;
+    touch-action: manipulation;
+  }
+
+  .field {
+    min-height: 2.75rem;
+    font-size: 1rem;
+  }
+}
+
 .date-field-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgba(28, 25, 23, 0.08);

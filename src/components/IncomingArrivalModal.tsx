@@ -4,7 +4,9 @@ import { useState } from "react";
 import { DateField } from "@/components/ui/FormFields";
 import { HintLabel } from "@/components/ui/HintLabel";
 import { Modal } from "@/components/ui/Modal";
+import { uploadAttachment } from "@/lib/attachments";
 import { createExpectedArrival, loadState } from "@/lib/demo-store";
+import { pushWmsStateNow } from "@/lib/wms-sync";
 
 export function IncomingArrivalModal({
   open,
@@ -36,14 +38,19 @@ export function IncomingArrivalModal({
       setError("Įrašyk trumpą pavadinimą (kas atkeliauja)");
       return;
     }
-    let attachmentDataUrl: string | null = null;
+    let attachmentUrl: string | null = null;
+    let attachmentStoragePath: string | null = null;
     if (file) {
-      attachmentDataUrl = await new Promise<string>((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(String(r.result));
-        r.onerror = () => reject(new Error("Nepavyko skaityti failo"));
-        r.readAsDataURL(file);
-      });
+      const uploaded = await uploadAttachment(file);
+      if (!uploaded.storageUrl) {
+        setError(
+          uploaded.error ||
+            "Nepavyko įkelti priedo į serverį — bandyk dar kartą arba be failo",
+        );
+        return;
+      }
+      attachmentUrl = uploaded.storageUrl;
+      attachmentStoragePath = uploaded.storagePath;
     }
     const state = createExpectedArrival(loadState(), {
       title: title.trim(),
@@ -51,9 +58,11 @@ export function IncomingArrivalModal({
       carrier: carrier.trim() || undefined,
       expectedAt: expectedAt || null,
       attachmentName: file?.name || null,
-      attachmentDataUrl,
+      attachmentUrl,
+      attachmentStoragePath,
     });
     const shipment = state.shipments[0];
+    void pushWmsStateNow(state);
     reset();
     onClose();
     onCreated?.(shipment.id);
@@ -118,7 +127,7 @@ export function IncomingArrivalModal({
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
           <p className="mt-1 text-xs text-stone-500">
-            Priedas saugomas sistemoje — galėsi atsidaryti prieš atvykimą.
+            Priedas saugomas serveryje — galėsi atsidaryti iš bet kurio įrenginio.
           </p>
         </label>
 
