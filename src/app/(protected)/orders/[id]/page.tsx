@@ -3,11 +3,16 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { issueOrder, loadState, placeUnit } from "@/lib/demo-store";
+import { issueOrder, loadState, placeUnit, restoreOrderFromArchive } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
 import { formatOrderQty } from "@/lib/labels";
 import { unitNotesVisibleInOrderInfo } from "@/lib/order-info";
-import { unitStatusLabel, zoneLabel } from "@/lib/ui-labels";
+import {
+  formatLocationHuman,
+  locationOptionLabel,
+  unitStatusLabel,
+  zoneLabel,
+} from "@/lib/ui-labels";
 import { suggestPlacementLocal } from "@/lib/placement";
 import { OrderInfoSection } from "@/components/OrderInfoSection";
 import { OrderEditSection } from "@/components/OrderEditSection";
@@ -33,16 +38,17 @@ export default function OrderDetailPage() {
   }, [state, order, units]);
 
   const pendingShipment = shipments.find((s) => s.status === "expected");
+  const canIssue = units.some((u) =>
+    ["stored", "received", "staged"].includes(u.status),
+  );
 
   if (!order) {
     return (
-      <div className="mx-auto max-w-3xl w-full">
-        <p>
-          Užsakymas nerastas.{" "}
-          <Link href="/orders" className="underline">
-            Atgal
-          </Link>
-        </p>
+      <div className="mx-auto max-w-3xl w-full space-y-2 py-6">
+        <p className="text-stone-700">Užsakymas nerastas.</p>
+        <Link href="/orders" className="text-sm font-medium underline">
+          ← Atgal į užsakymus
+        </Link>
       </div>
     );
   }
@@ -66,11 +72,12 @@ export default function OrderDetailPage() {
       }),
     });
     if (!res.ok) {
-      let errText = "Klaida generuojant lipduką";
+      let errText = "Nepavyko paruošti lipdukų";
       try {
         const j = (await res.json()) as { error?: string };
         if (res.status === 401) errText = "Sesija pasibaigė — prisijunk iš naujo";
-        else if (res.status === 503) errText = "Serveris nesukonfigūruotas (Supabase)";
+        else if (res.status === 503)
+          errText = "Spausdinimas dar nesutvarkytas šiame kompiuteryje";
         else if (j.error) errText = j.error;
       } catch {
         /* ignore */
@@ -91,7 +98,7 @@ export default function OrderDetailPage() {
       try {
         const file = new File([blob], filename, { type: "application/zip" });
         await navigator.share({ files: [file], title: filename });
-        setMsg("Lipdukų archyvas pasidalintas / išsaugotas.");
+        setMsg("Lipdukai išsaugoti — gali spausdinti.");
         return;
       } catch {
         /* fallback */
@@ -107,13 +114,13 @@ export default function OrderDetailPage() {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     setMsg(
-      "Archyvas atsisiųstas. Išarchyvuok → spausdinti.bat → kopijų sk. → spausdinimas.",
+      "Lipdukai atsisiųsti. Išarchyvuok failą ir paleisk spausdinimą.",
     );
   }
 
   function showSuggestedPlacement() {
     if (!suggestion) {
-      setMsg("Nerasta tinkamos laisvos vietos");
+      setMsg("Nėra laisvos vietos pagal šį užsakymą");
       return;
     }
     const params = new URLSearchParams({
@@ -129,109 +136,160 @@ export default function OrderDetailPage() {
 
   function doIssue() {
     if (!order) return;
-    const name = prompt("Gavėjas / kas pasiėmė?") || "Klientas";
+    const name = prompt("Kas pasiėmė? (vardas ar įmonė)") || "Klientas";
     issueOrder(loadState(), order.id, name, "");
-    setMsg("Išduota ir archyvuota");
+    setMsg("Išduota klientui — užsakymas archyvuotas");
   }
 
   return (
-    <div className="mx-auto max-w-3xl w-full space-y-4">
+    <div className="mx-auto max-w-3xl w-full space-y-5 py-4 sm:py-6">
       <div>
-        <Link href="/orders" className="text-sm text-stone-600 underline">
+        <Link
+          href="/orders"
+          className="text-sm text-stone-500 underline decoration-stone-300 underline-offset-2 hover:text-stone-800"
+        >
           ← Užsakymai
         </Link>
-        <h1 className="font-display mt-1 text-3xl font-semibold">
-          {order.project || order.orderCode}
+        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+          Užsakymas
+        </p>
+        <h1 className="font-display mt-1 text-3xl font-semibold text-stone-900">
+          {order.project || order.orderCode || "Be pavadinimo"}
         </h1>
-        <p className="text-sm text-stone-600">
-          {order.orderCode} · {order.client} · {zoneLabel(order.zone)}
-          {order.blockStorage ? " · ilgas saugojimas" : ""}
-          {units.length > 0 ? ` · ${formatOrderQty(units)}` : ""}
+        <p className="mt-1 text-sm text-stone-600">
+          {[
+            order.orderCode,
+            order.client,
+            zoneLabel(order.zone),
+            order.blockStorage ? "ilgas saugojimas" : null,
+            units.length > 0 ? formatOrderQty(units) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
         {order.qrToken && (
-          <p className="mt-1 text-xs text-stone-500">
-            QR:{" "}
-            <Link href={`/o/${order.qrToken}`} className="underline">
-              /o/{order.qrToken}
-            </Link>
-          </p>
+          <Link
+            href={`/o/${order.qrToken}`}
+            className="mt-2 inline-block text-sm font-medium text-stone-700 underline decoration-stone-300 underline-offset-2"
+          >
+            Atidaryti QR kortelę
+          </Link>
         )}
       </div>
 
       {msg && (
-        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           {msg}
         </p>
       )}
 
-      <div className="page-mobile-stack">
-        <button onClick={downloadLabels} className="btn-primary">
-          Lipdukas (spausdinimas)
-        </button>
-        {pendingShipment && (
-          <Link
-            href={`/receive/${pendingShipment.id}`}
+      <section className="card-panel space-y-3">
+        <h2 className="font-display text-lg font-semibold text-stone-900">
+          Ką daryti
+        </h2>
+        <div className="page-mobile-stack">
+          <button type="button" onClick={downloadLabels} className="btn-primary">
+            Spausdinti lipdukus
+          </button>
+          {pendingShipment && (
+            <Link href={`/receive/${pendingShipment.id}`} className="btn-secondary">
+              Priimti atvykimą
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={showSuggestedPlacement}
             className="btn-secondary"
           >
-            Priimti atvykimą
+            Kur padėti?
+          </button>
+          <Link href={`/pick/${order.id}`} className="btn-secondary">
+            Atsiėmimas / važtaraštis
           </Link>
+        </div>
+        {canIssue && (
+          <button type="button" onClick={doIssue} className="btn-danger w-full sm:w-auto">
+            Klientas pasiėmė
+          </button>
         )}
-        <button onClick={showSuggestedPlacement} className="btn-secondary">
-          Rodyti siūlomą vietą
-        </button>
-        <button
-          onClick={doIssue}
-          className="rounded-lg bg-red-800 px-3 py-2.5 text-sm font-semibold text-white min-h-[2.75rem] w-full sm:w-auto"
-        >
-          Pažymėti, kad pasiėmė
-        </button>
-      </div>
+        {order.status === "archived" && (
+          <button
+            type="button"
+            className="btn-primary w-full sm:w-auto"
+            onClick={() => {
+              if (
+                !confirm(
+                  "Grąžinti užsakymą į sandėlį su buvusiomis vietomis (jei žinomos)?",
+                )
+              )
+                return;
+              restoreOrderFromArchive(loadState(), order.id);
+              setMsg("Užsakymas grąžintas į sandėlį");
+            }}
+          >
+            Grąžinti iš archyvo
+          </button>
+        )}
+      </section>
 
       <OrderEditSection orderId={order.id} />
 
       <OrderInfoSection orderId={order.id} id="info" />
 
-      <div className="rounded-xl border bg-white p-4">
-        <h2 className="font-semibold">Dėžės ir paletės</h2>
-        <ul className="mt-2 divide-y text-sm">
+      <section className="card-panel">
+        <h2 className="font-display text-lg font-semibold text-stone-900">
+          Dėžės ir paletės
+        </h2>
+        <p className="mt-1 text-sm text-stone-500">
+          Pasirink vietą iš sąrašo arba perkelk per sandėlio žemėlapį
+        </p>
+        <ul className="mt-3 divide-y divide-stone-100">
           {units.map((u) => {
             const loc = state.locations.find((l) => l.id === u.locationId);
+            const floor = u.floorAreaId
+              ? state.floorAreas.find((f) => f.id === u.floorAreaId)
+              : null;
+            const placeLabel = floor
+              ? floor.label || "Ant grindų"
+              : formatLocationHuman(loc?.code ?? null, loc?.label);
             const showUnitNotes = !unitNotesVisibleInOrderInfo(
               state,
               order.id,
               u.notes,
             );
             return (
-              <li
-                key={u.id}
-                className="flex flex-col gap-2 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
-              >
-                <div>
-                  <Link
-                    href={`/u/${u.qrToken}`}
-                    className="font-medium underline"
-                  >
-                    {u.indexInSet}/{u.totalInSet} — {u.labelTitle}
-                  </Link>
-                  <div className="text-stone-500">
-                    {unitStatusLabel(u.status)} ·{" "}
-                    {loc?.label ?? loc?.code ?? "dar nepadėta"}
-                  </div>
-                  {showUnitNotes && u.notes?.trim() && (
-                    <p className="mt-1 text-xs text-stone-600 whitespace-pre-wrap">
-                      {u.notes}
+              <li key={u.id} className="flex flex-col gap-2 py-3.5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <Link
+                      href={`/u/${u.qrToken}`}
+                      className="font-semibold text-stone-900 underline decoration-stone-300 underline-offset-2"
+                    >
+                      {u.indexInSet}/{u.totalInSet} — {u.labelTitle}
+                    </Link>
+                    <p className="mt-0.5 text-sm text-stone-600">
+                      <span className="font-medium text-stone-800">
+                        {unitStatusLabel(u.status)}
+                      </span>
+                      {" · "}
+                      {placeLabel}
                     </p>
-                  )}
+                  </div>
                 </div>
+                {showUnitNotes && u.notes?.trim() && (
+                  <p className="rounded-lg bg-stone-50 px-2.5 py-2 text-xs leading-relaxed text-stone-700 whitespace-pre-wrap">
+                    {u.notes}
+                  </p>
+                )}
                 <select
-                  className="field !min-h-11 !py-2 text-sm sm:!min-h-0 sm:w-auto"
+                  className="field !min-h-11 !py-2 text-sm sm:!min-h-0"
                   value={u.locationId ?? ""}
                   onChange={(e) => {
                     if (e.target.value)
                       placeUnit(loadState(), u.id, e.target.value);
                   }}
                 >
-                  <option value="">— vieta —</option>
+                  <option value="">— pasirink vietą —</option>
                   {state.locations
                     .filter(
                       (l) =>
@@ -241,24 +299,38 @@ export default function OrderDetailPage() {
                     )
                     .map((l) => (
                       <option key={l.id} value={l.id}>
-                        {l.code}
+                        {locationOptionLabel(l)}
                       </option>
                     ))}
                 </select>
               </li>
             );
           })}
+          {units.length === 0 && (
+            <li className="py-6 text-sm text-stone-500">
+              Dar nėra pažymėtų dėžių
+            </li>
+          )}
         </ul>
-      </div>
+      </section>
 
       {suggestion && (
-        <div className="rounded-xl border bg-white p-4 text-sm">
-          <h2 className="font-semibold">Siūloma vieta</h2>
-          <p className="mt-1 font-mono text-xs text-stone-800">
-            {suggestion.code}
+        <section className="card-panel">
+          <h2 className="font-display text-lg font-semibold text-stone-900">
+            Siūloma vieta
+          </h2>
+          <p className="mt-1 font-semibold text-stone-900">
+            {formatLocationHuman(suggestion.code)}
           </p>
-          <p className="mt-2 text-stone-600">{suggestion.reason}</p>
-        </div>
+          <p className="mt-1 text-sm text-stone-600">{suggestion.reason}</p>
+          <button
+            type="button"
+            className="btn-secondary mt-3"
+            onClick={showSuggestedPlacement}
+          >
+            Rodyti sandėlyje
+          </button>
+        </section>
       )}
     </div>
   );

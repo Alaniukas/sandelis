@@ -124,16 +124,25 @@ export default function SearchPage() {
     router.push(`/map?unit=${unitId}&hint=1&label=${encodeURIComponent(label)}`);
   }
 
+  function startMove(unitId: string, label: string) {
+    router.push(
+      `/map?move=${unitId}&hint=1&label=${encodeURIComponent(label)}`,
+    );
+  }
+
+  const canMove = (status: string, hasPlace: boolean) =>
+    ["stored", "received", "staged"].includes(status) && hasPlace;
+
   return (
     <div className="mx-auto max-w-3xl w-full space-y-5 py-4 sm:py-6">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-          Rask bet ką sandėlyje
+          Rask prekę
         </p>
         <HintLabel
           block
           label="Paieška"
-          hint="Ieškok pagal projektą, klientą, kodą ar gamintoją. Radęs — parodys kur stovi ir nuves į sandėlį. Skiriasi nuo Užsakymų: čia ieškai konkrečių dėžių ar palečių, ne užsakymų sąrašo."
+          hint="Ieškok pagal projektą, klientą ar kodą. Radęs — gali parodyti sandėlyje arba perkelti. Užsakymų sąrašas — atskirame skirtuke „Užsakymai“."
           className="mt-1"
         />
       </div>
@@ -257,7 +266,7 @@ export default function SearchPage() {
                     {r.locationLabel}
                     {r.rack != null && (
                       <span className="ml-1 text-xs font-normal text-stone-500">
-                        (stel. {r.rack})
+                        (stelažas {r.rack})
                       </span>
                     )}
                   </p>
@@ -277,7 +286,7 @@ export default function SearchPage() {
                       setExpandedOrderId(expanded ? null : r.orderId)
                     }
                   >
-                    {expanded ? "Sutraukti" : "Info"}
+                    {expanded ? "Sutraukti" : "Pastabos"}
                   </button>
                   <button
                     type="button"
@@ -291,8 +300,17 @@ export default function SearchPage() {
                       )
                     }
                   >
-                    Sandėlyje
+                    Kur stovi
                   </button>
+                  {canMove(r.status, !!(r.locationCode || r.rack != null)) && (
+                    <button
+                      type="button"
+                      className="btn-secondary !text-xs"
+                      onClick={() => startMove(r.unitId, r.label)}
+                    >
+                      Perkelti
+                    </button>
+                  )}
                   <Link
                     href={`/orders/${r.orderId}#info`}
                     className="btn-secondary !text-xs"
@@ -312,7 +330,7 @@ export default function SearchPage() {
           })}
           {results.length === 0 && (
             <p className="px-4 py-10 text-center text-sm text-stone-500">
-              Nieko nerasta — pabandyk kitus filtrus
+              Nieko nerasta — pabandyk kitą projektą ar klientą
             </p>
           )}
         </MobileCardList>
@@ -357,7 +375,7 @@ export default function SearchPage() {
                     {r.locationLabel}
                     {r.rack != null && (
                       <span className="ml-1 text-xs text-stone-500">
-                        (stel. {r.rack})
+                        (stelažas {r.rack})
                       </span>
                     )}
                   </td>
@@ -373,7 +391,7 @@ export default function SearchPage() {
                           setExpandedOrderId(expanded ? null : r.orderId)
                         }
                       >
-                        {expanded ? "Sutraukti" : "Info"}
+                        {expanded ? "Sutraukti" : "Pastabos"}
                       </button>
                       <button
                         type="button"
@@ -387,8 +405,17 @@ export default function SearchPage() {
                           )
                         }
                       >
-                        Rodyti sandėlyje
+                        Kur stovi
                       </button>
+                      {canMove(r.status, !!(r.locationCode || r.rack != null)) && (
+                        <button
+                          type="button"
+                          className="btn-secondary !px-2.5 !py-1.5 !text-xs"
+                          onClick={() => startMove(r.unitId, r.label)}
+                        >
+                          Perkelti
+                        </button>
+                      )}
                       <Link
                         href={`/orders/${r.orderId}#info`}
                         className="btn-secondary !px-2.5 !py-1.5 !text-xs"

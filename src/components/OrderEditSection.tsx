@@ -109,10 +109,12 @@ export function OrderEditSection({ orderId }: { orderId: string }) {
   return (
     <div className="rounded-xl border border-stone-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold text-stone-900">Redaguoti prekę</h2>
+        <h2 className="font-display text-lg font-semibold text-stone-900">
+          Keisti informaciją
+        </h2>
         {!open && (
           <button type="button" className="btn-secondary !text-xs" onClick={startEdit}>
-            Keisti laukus
+            Redaguoti
           </button>
         )}
       </div>
@@ -154,8 +156,8 @@ export function OrderEditSection({ orderId }: { orderId: string }) {
                 }
               >
                 <option value="">—</option>
-                <option value="EXPO">EXPO</option>
-                <option value="DILED">DILED</option>
+                <option value="EXPO">ExpoDesign</option>
+                <option value="DILED">Diled</option>
               </select>
             </label>
           </div>
@@ -221,7 +223,7 @@ export function OrderEditSection({ orderId }: { orderId: string }) {
               checked={blockStorage}
               onChange={(e) => setBlockStorage(e.target.checked)}
             />
-            Ilgas saugojimas (traukti iš priekio)
+            Ilgas saugojimas — traukti iš priekio, nestatyti giliai
           </label>
 
           <div className="space-y-2">
@@ -297,7 +299,7 @@ export function OrderEditSection({ orderId }: { orderId: string }) {
                     className="rounded-lg border border-stone-100 bg-stone-50/80 p-3 space-y-2"
                   >
                     <p className="text-xs font-semibold text-stone-500">
-                      {u.indexInSet}/{u.totalInSet}
+                      Dėžė {u.indexInSet} iš {u.totalInSet}
                     </p>
                     <input
                       className="field"

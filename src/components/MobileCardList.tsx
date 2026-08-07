@@ -4,7 +4,11 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 export function MobileCardList({ children }: { children: ReactNode }) {
-  return <div className="divide-y divide-stone-100 md:hidden">{children}</div>;
+  return (
+    <div className="divide-y divide-stone-100 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm md:hidden">
+      {children}
+    </div>
+  );
 }
 
 export function MobileCardRow({
@@ -23,13 +27,19 @@ export function MobileCardRow({
   const content = (
     <>
       <div className="min-w-0 flex-1">
-        <p className="font-semibold text-stone-900">{title}</p>
+        <p className="text-[15px] font-medium leading-snug text-stone-900">
+          {title}
+        </p>
         {subtitle && (
-          <p className="mt-0.5 truncate text-xs text-stone-500">{subtitle}</p>
+          <p className="mt-0.5 truncate text-sm text-stone-500">{subtitle}</p>
         )}
-        {meta && <div className="mt-2 text-sm text-stone-700">{meta}</div>}
+        {meta && <div className="mt-2 text-sm text-stone-600">{meta}</div>}
       </div>
-      {actions && <div className="flex w-full flex-col gap-2 sm:w-auto">{actions}</div>}
+      {actions && (
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+          {actions}
+        </div>
+      )}
     </>
   );
 
@@ -46,4 +56,3 @@ export function MobileCardRow({
 
   return <div className={className}>{content}</div>;
 }
-

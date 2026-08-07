@@ -39,12 +39,12 @@ export function AppNav() {
 
   const pageTitle =
     path === "/"
-      ? "Sandėlio WMS"
+      ? "Sandėlis"
       : links.find(
           (l) =>
             l.href !== "/" &&
             (path === l.href || path.startsWith(`${l.href}/`)),
-        )?.label ?? "Sandėlio WMS";
+        )?.label ?? "Sandėlis";
 
   return (
     <>
@@ -58,7 +58,7 @@ export function AppNav() {
               {pageTitle}
             </span>
             <span className="hidden text-sm font-bold tracking-tight md:block">
-              Sandėlio WMS
+              Sandėlis
             </span>
           </Link>
 
@@ -90,7 +90,7 @@ export function AppNav() {
               className="btn-secondary !rounded-full !px-3.5 !py-1.5 !text-xs"
               onClick={() => setIncomingOpen(true)}
             >
-              + Atkeliauja
+              Atkeliauja
             </button>
             <button
               type="button"

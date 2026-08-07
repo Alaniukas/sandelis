@@ -14,8 +14,8 @@ const display = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Sandėlio WMS — EXPO / DILED",
-  description: "Vidinė sandėlio valdymo sistema",
+  title: "Sandėlis — ExpoDesign / Diled",
+  description: "Kur kas stovi, atvykimai, atsiėmimai",
 };
 
 export const viewport = {

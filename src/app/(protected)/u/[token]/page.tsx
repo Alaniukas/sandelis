@@ -33,7 +33,7 @@ export default function UnitPage() {
 
   const locationLabel = formatLocationHuman(
     loc?.code ?? null,
-    floor?.label ?? null,
+    floor?.label ?? loc?.label ?? null,
   );
   const rack = loc?.rack ?? null;
   const canIssue =
@@ -53,12 +53,12 @@ export default function UnitPage() {
   if (!unit) {
     return (
       <div className="mx-auto max-w-md space-y-3 py-8">
-        <h1 className="text-xl font-semibold">Prekė nerasta</h1>
+        <h1 className="font-display text-xl font-semibold">Prekė nerasta</h1>
         <p className="text-sm text-stone-600">
-          QR kodas neatpažintas. Kol duomenys saugomi šiame naršyklės profilyje,
-          telefonas turi būti tas pats įrenginys arba vėliau — bendra duomenų bazė.
+          Šis lipdukas šiuo metu neatpažintas. Pabandyk telefone ar kompiuteryje,
+          kur jau dirbi su sandėliu.
         </p>
-        <Link href="/map" className="text-sm font-medium text-blue-800 underline">
+        <Link href="/map" className="text-sm font-medium underline">
           Į sandėlį
         </Link>
       </div>
@@ -69,47 +69,51 @@ export default function UnitPage() {
     <div className="mx-auto max-w-md space-y-4 py-4">
       <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-          Lipduko info
+          Lipdukas
         </p>
         <h1 className="font-display mt-1 text-2xl font-semibold text-stone-900">
           {unit.labelTitle}
         </h1>
         <p className="mt-1 text-sm text-stone-600">
-          {unit.indexInSet} iš {unit.totalInSet} ·{" "}
-          {unitStatusLabel(unit.status)}
+          Dėžė {unit.indexInSet} iš {unit.totalInSet} ·{" "}
+          <span className="font-medium text-stone-800">
+            {unitStatusLabel(unit.status)}
+          </span>
         </p>
 
         <dl className="mt-4 space-y-3 text-sm">
           <div>
-            <dt className="text-stone-500">Vieta sandėlyje</dt>
-            <dd className="font-mono font-semibold text-stone-900">
+            <dt className="section-label">Kur stovi</dt>
+            <dd className="mt-0.5 font-semibold text-stone-900">
               {locationLabel}
             </dd>
           </div>
           {order?.project && (
             <div>
-              <dt className="text-stone-500">Projektas</dt>
-              <dd className="font-medium">{order.project}</dd>
+              <dt className="section-label">Projektas</dt>
+              <dd className="mt-0.5 font-medium">{order.project}</dd>
             </div>
           )}
           {(order?.orderCode || order?.client) && (
             <div>
-              <dt className="text-stone-500">Kodas · klientas</dt>
-              <dd>
+              <dt className="section-label">Kodas · klientas</dt>
+              <dd className="mt-0.5">
                 {[order.orderCode, order.client].filter(Boolean).join(" · ")}
               </dd>
             </div>
           )}
           {customFields.map((f) => (
             <div key={f.id}>
-              <dt className="text-stone-500">{f.label || "Laukas"}</dt>
-              <dd>{f.value || "—"}</dd>
+              <dt className="section-label">{f.label || "Papildoma"}</dt>
+              <dd className="mt-0.5">{f.value || "—"}</dd>
             </div>
           ))}
           {unit.notes && (
             <div>
-              <dt className="text-stone-500">Prekės eilutės</dt>
-              <dd className="text-stone-700">{unit.notes}</dd>
+              <dt className="section-label">Pastabos</dt>
+              <dd className="mt-0.5 whitespace-pre-wrap text-stone-700">
+                {unit.notes}
+              </dd>
             </div>
           )}
         </dl>
@@ -121,19 +125,19 @@ export default function UnitPage() {
             disabled={issuing}
             onClick={handleIssue}
           >
-            {issuing ? "Žymima…" : "Pažymėti išvykus"}
+            {issuing ? "Žymima…" : "Pažymėti: pasiėmė"}
           </button>
         )}
 
         {done && (
           <p className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
-            Pažymėta išvykusi. Vieta sandėlyje laisva.
+            Išduota. Vieta sandėlyje laisva.
           </p>
         )}
 
         {unit.status === "issued" && !done && (
           <p className="mt-4 rounded-xl bg-stone-100 px-4 py-3 text-sm text-stone-700">
-            Ši prekė jau pažymėta išvykusi.
+            Ši prekė jau išduota.
           </p>
         )}
 
@@ -141,22 +145,22 @@ export default function UnitPage() {
           {rack != null &&
             unit.status !== "issued" &&
             unit.status !== "archived" && (
-            <button
-              type="button"
-              className="font-medium text-blue-800 underline"
-              onClick={() =>
-                router.push(
-                  `/map?rack=${rack}&unit=${unit.id}&hint=1&code=${encodeURIComponent(loc?.code ?? "")}`,
-                )
-              }
-            >
-              Rodyti sandėlyje
-            </button>
-          )}
+              <button
+                type="button"
+                className="font-medium text-stone-800 underline decoration-stone-300 underline-offset-2"
+                onClick={() =>
+                  router.push(
+                    `/map?rack=${rack}&unit=${unit.id}&hint=1&code=${encodeURIComponent(loc?.code ?? "")}`,
+                  )
+                }
+              >
+                Rodyti sandėlyje
+              </button>
+            )}
           {order && (
             <Link
               href={`/orders/${order.id}`}
-              className="font-medium text-blue-800 underline"
+              className="font-medium text-stone-800 underline decoration-stone-300 underline-offset-2"
             >
               Atidaryti užsakymą
             </Link>

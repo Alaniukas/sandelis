@@ -12,7 +12,8 @@ import {
 } from "@/lib/demo-store";
 import { uploadAttachment } from "@/lib/attachments";
 import { pushWmsStateNow } from "@/lib/wms-sync";
-import { locationCode, zoneForRack } from "@/lib/locations";
+import { locationCode, rackLevelDefs, zoneForRack } from "@/lib/locations";
+import { formatLocationHuman } from "@/lib/ui-labels";
 import { mergeUniqueNotes } from "@/lib/order-info";
 import { suggestPlacementLocal, type PlacementSuggestion } from "@/lib/placement";
 import { Modal } from "@/components/ui/Modal";
@@ -98,6 +99,22 @@ export function NewShipmentModal({
   const [placeNow, setPlaceNow] = useState(true);
   const [manualRack, setManualRack] = useState<number | "">("");
   const [manualLevel, setManualLevel] = useState<1 | 2 | 3>(1);
+
+  const manualLevelOptions = useMemo(() => {
+    if (manualRack === "") return [1, 2, 3] as const;
+    return rackLevelDefs(manualRack)
+      .map((d) => d.key)
+      .filter((k): k is number => typeof k === "number");
+  }, [manualRack]);
+
+  useEffect(() => {
+    if (
+      manualLevelOptions.length > 0 &&
+      !manualLevelOptions.includes(manualLevel)
+    ) {
+      setManualLevel(manualLevelOptions[0] as 1 | 2 | 3);
+    }
+  }, [manualLevelOptions, manualLevel]);
   const [manualSide, setManualSide] = useState<"K" | "D">("K");
   const [placementNotes, setPlacementNotes] = useState("");
   const [suggestion, setSuggestion] = useState<PlacementSuggestion | null>(
@@ -311,7 +328,7 @@ export function NewShipmentModal({
       if (s.zone) update("zone", s.zone);
       setPlaceNow(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Siūlymo klaida");
+      setError(e instanceof Error ? e.message : "Nepavyko pasiūlyti vietos");
     } finally {
       setSuggesting(false);
     }
@@ -448,12 +465,16 @@ export function NewShipmentModal({
     ? `Registruoti atvykimą · ${incomingShipment?.parsedJson?.project || "Atkeliauja"}`
     : isLegacy
     ? hasTarget
-      ? `Žymėti seną · ${prefillLocation?.code || prefillFloorLabel || "vieta"}`
+      ? `Žymėti seną · ${
+          prefillFloorLabel ||
+          formatLocationHuman(prefillLocation?.code ?? null, prefillLocation?.label) ||
+          "vieta"
+        }`
       : "Žymėti seną užsakymą"
     : hasTarget
       ? prefillFloorAreaId
-        ? `Užsakymas ant grindų · ${prefillFloorLabel || "plotas"}`
-        : `Užsakymas · ${prefillLocation?.code}`
+        ? `Ant grindų · ${prefillFloorLabel || "plotas"}`
+        : `Vieta · ${formatLocationHuman(prefillLocation?.code ?? null, prefillLocation?.label)}`
       : "Naujas atvykimas";
 
   function update<K extends keyof ParsedDocument>(
@@ -473,7 +494,7 @@ export function NewShipmentModal({
   function addLine() {
     setDoc((prev) => ({
       ...prev,
-      lines: [...prev.lines, { name: "", qty: 1, unit: "VNT" }],
+      lines: [...prev.lines, { name: "", qty: 1, unit: "vnt." }],
     }));
   }
 
@@ -532,12 +553,16 @@ export function NewShipmentModal({
       <div className="space-y-5">
         {hasTarget && (
           <div className="rounded-xl bg-stone-900 px-4 py-3 text-sm text-white">
-            <p className="font-mono font-semibold">
-              {prefillLocation?.code || prefillFloorLabel || "Ant grindų"}
+            <p className="font-semibold tracking-tight">
+              {prefillFloorLabel ||
+                formatLocationHuman(
+                  prefillLocation?.code ?? null,
+                  prefillLocation?.label,
+                ) ||
+                "Ant grindų"}
             </p>
-            <p className="mt-1 text-xs text-stone-300">
-              {prefillLocation?.label ||
-                "Prekė bus priskirta pažymėtam plotui ant grindų"}
+            <p className="mt-1 text-sm text-stone-300">
+              Prekė bus padėta šioje vietoje
             </p>
           </div>
         )}
@@ -545,7 +570,7 @@ export function NewShipmentModal({
         {isLegacy && !hasTarget && (
           <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
             Pasirink vietą žemėlapyje — spausk ant stelažo ar grindų ploto,
-            tada „Žymėti čia (minimaliai)“.
+            tada „Žymėti čia“.
           </p>
         )}
 
@@ -557,9 +582,12 @@ export function NewShipmentModal({
                 href={shipmentAttachmentHref(incomingShipment)!}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-1 inline-block text-xs font-semibold underline"
+                className="mt-1 inline-block text-sm font-semibold underline"
               >
-                Atidaryti priedą ({incomingShipment.documentName || "PDF"})
+                Atidaryti dokumentą
+                {incomingShipment.documentName
+                  ? ` (${incomingShipment.documentName})`
+                  : ""}
               </a>
             )}
           </div>
@@ -567,8 +595,8 @@ export function NewShipmentModal({
 
         {isLegacy && hasTarget && (
           <p className="rounded-xl bg-stone-100 px-4 py-3 text-sm text-stone-600">
-            Minimalus įrašas — kas stovi ir kur. Be dokumentų ir DI. Vėliau
-            galėsi papildyti užsakymo puslapyje.
+            Trumpas įrašas — kas stovi ir kur. Dokumentų nereikia. Vėliau galėsi
+            papildyti užsakymo puslapyje.
           </p>
         )}
 
@@ -576,8 +604,8 @@ export function NewShipmentModal({
         <div className="space-y-3 rounded-xl border border-stone-200 bg-stone-50 p-4">
           <HintLabel
             label="Iš dokumento"
-            hint="Įklijuok tekstą iš el. laiško, sąskaitos ar packing list — sistema bandys užpildyti laukus. Visada gali pataisyti ranka."
-            className="text-xs font-semibold uppercase tracking-wide text-stone-500"
+            hint="Įklijuok tekstą iš el. laiško, sąskaitos ar pakavimo lapo — sistema bandys užpildyti laukus. Visada gali pataisyti ranka."
+            className="section-label"
           />
           <Field label="Tekstas ar aprašymas">
             <textarea
@@ -585,7 +613,7 @@ export function NewShipmentModal({
               rows={4}
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
-              placeholder={`Pvz.\nDubai projektas, bus 3–4 mėn. sandėlyje, 4 didelės paletės, zona DILED`}
+              placeholder={`Pvz.\nDubai projektas, bus 3–4 mėn. sandėlyje, 4 didelės paletės, zona Diled`}
             />
           </Field>
           <div className="flex flex-wrap items-center gap-2">
@@ -621,8 +649,8 @@ export function NewShipmentModal({
         )}
 
         <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-            {isLegacy ? "Kas čia stovi" : "Užsakymo info"}
+          <p className="section-label">
+            {isLegacy ? "Kas čia stovi" : "Užsakymas"}
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <SuggestField
@@ -662,7 +690,7 @@ export function NewShipmentModal({
               value={doc.source}
               onChange={(v) => update("source", v)}
               suggestions={formSuggestions.manufacturers}
-              placeholder="Iguzzini, DILED…"
+              placeholder="Iguzzini, Flos…"
             />
             )}
             <Field label="Zona">
@@ -677,13 +705,13 @@ export function NewShipmentModal({
                 }
               >
                 <option value="">—</option>
-                <option value="EXPO">EXPO</option>
-                <option value="DILED">DILED</option>
+                <option value="EXPO">ExpoDesign</option>
+                <option value="DILED">Diled</option>
               </select>
             </Field>
             {!occupyEntireRack && (
               <NumberField
-                label="Dėžių / palečių sk. (bendras)"
+                label="Kiek dėžių / palečių"
                 min={1}
                 value={colli}
                 onChange={setColli}
@@ -763,13 +791,13 @@ export function NewShipmentModal({
             ))}
             {doc.source && (
               <div className="space-y-2 border-t border-stone-200 pt-3">
-                <Field label="Gamintojo formato pastabos (AI kontekstui)">
+                <Field label="Gamintojo formato pastabos">
                   <textarea
                     className="field min-h-[3rem]"
                     rows={2}
                     value={profileNotes}
                     onChange={(e) => setProfileNotes(e.target.value)}
-                    placeholder="Pvz. orderCode = Your order no., client = Your reference"
+                    placeholder="Kaip šiame dokumente vadinasi kodas, klientas…"
                   />
                 </Field>
                 <label className="flex items-center gap-2 text-xs text-stone-600">
@@ -778,7 +806,7 @@ export function NewShipmentModal({
                     checked={saveProfile}
                     onChange={(e) => setSaveProfile(e.target.checked)}
                   />
-                  Išsaugoti profilį ({doc.source})
+                  Įsiminti šį gamintoją kitam kartui
                 </label>
               </div>
             )}
@@ -788,13 +816,13 @@ export function NewShipmentModal({
           {!isLegacy && (
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-medium text-stone-700">Eilutės</p>
+              <p className="text-sm font-medium text-stone-700">Kas dėžėse</p>
               <button
                 type="button"
                 className="text-xs font-semibold text-stone-600 underline"
                 onClick={addLine}
               >
-                + Eilutė
+                + Prekė
               </button>
             </div>
             {doc.lines.map((l, i) => (
@@ -816,7 +844,7 @@ export function NewShipmentModal({
                 />
                 <input
                   className="field"
-                  placeholder="VNT"
+                  placeholder="vnt."
                   value={l.unit}
                   onChange={(e) => updateLine(i, { unit: e.target.value })}
                 />
@@ -836,10 +864,8 @@ export function NewShipmentModal({
         {/* Vieta sandėlyje */}
         {!prefillFloorAreaId && !isLegacy && (
           <div className="space-y-3 rounded-xl border border-stone-200 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-              Kur dėti?
-            </p>
-            <Field label="Papildomos pastabos (laikymo laikas, dydis, zona…)">
+            <p className="section-label">Kur dėti?</p>
+            <Field label="Pastabos vietai (laikas, dydis, zona…)">
               <textarea
                 className="field min-h-[4.5rem]"
                 rows={3}
@@ -860,15 +886,15 @@ export function NewShipmentModal({
             {suggestion && (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
                 <p className="font-semibold">
-                  Siūlymas: {suggestion.code}
+                  Siūlymas: {formatLocationHuman(suggestion.code)}
                   {suggestion.occupyEntireRack ? " · visas stelažas" : ""}
                 </p>
-                <p className="mt-1 text-xs text-emerald-900/90">
+                <p className="mt-1 text-sm text-emerald-900/90">
                   {suggestion.reason}
                 </p>
                 <button
                   type="button"
-                  className="mt-2 text-xs font-semibold underline"
+                  className="mt-2 text-sm font-semibold underline"
                   onClick={showOnMap}
                 >
                   Rodyti sandėlyje
@@ -904,8 +930,8 @@ export function NewShipmentModal({
                       setManualSide(e.target.value as "K" | "D")
                     }
                   >
-                    <option value="K">K</option>
-                    <option value="D">D</option>
+                    <option value="K">Kairė</option>
+                    <option value="D">Dešinė</option>
                   </select>
                 </Field>
                 <Field label="Aukštas">
@@ -916,9 +942,11 @@ export function NewShipmentModal({
                       setManualLevel(Number(e.target.value) as 1 | 2 | 3)
                     }
                   >
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                    <option value={3}>3</option>
+                    {manualLevelOptions.map((lv) => (
+                      <option key={lv} value={lv}>
+                        {lv}
+                      </option>
+                    ))}
                   </select>
                 </Field>
               </div>

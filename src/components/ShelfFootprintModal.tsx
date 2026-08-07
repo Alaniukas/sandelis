@@ -7,9 +7,13 @@ import {
   loadState,
 } from "@/lib/demo-store";
 import { BAY_DEPTH_M, locationCode, zoneForRack } from "@/lib/locations";
-import { OrderPicker } from "@/components/OrderPicker";
+import {
+  ExistingOrderAssignFields,
+  type ExistingAssignMode,
+} from "@/components/ExistingOrderAssignFields";
 import { useWms } from "@/lib/use-wms";
 import type { PrefillLocation } from "@/components/NewShipmentModal";
+import { formatLocationHuman } from "@/lib/ui-labels";
 
 export type ShelfDraft = {
   rack?: number;
@@ -31,7 +35,7 @@ export function ShelfFootprintModal({
 }: {
   draft: ShelfDraft | null;
   onClose: () => void;
-  /** Atidaro Nauja siunta modalą su šia vieta */
+  /** Atidaro naują atvykimą su šia vieta */
   onCreateNew: (prefill: PrefillLocation) => void;
 }) {
   const state = useWms();
@@ -39,6 +43,9 @@ export function ShelfFootprintModal({
   const [d, setD] = useState(BAY_DEPTH_M);
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [orderId, setOrderId] = useState("");
+  const [assignMode, setAssignMode] = useState<ExistingAssignMode>("new");
+  const [moveUnitId, setMoveUnitId] = useState("");
+  const [unitNotes, setUnitNotes] = useState("");
 
   const activeOrders = useMemo(
     () => state.orders.filter((o) => o.status === "active"),
@@ -51,6 +58,9 @@ export function ShelfFootprintModal({
     setD(Math.round(Math.min(MAX_DEPTH, draft.d) * 100) / 100);
     setMode("new");
     setOrderId(activeOrders[0]?.id ?? "");
+    setAssignMode("new");
+    setMoveUnitId("");
+    setUnitNotes("");
   }, [draft, activeOrders]);
 
   function resolveCode() {
@@ -111,28 +121,33 @@ export function ShelfFootprintModal({
     }
 
     if (!orderId) return;
+    if (assignMode === "move" && !moveUnitId) return;
     assignOrderToShelf(loadState(), orderId, {
+      assignMode,
+      unitId: assignMode === "move" ? moveUnitId : undefined,
       locationId: code,
       footprintW: fw,
       footprintD: fd,
       footprintOffsetX: draft.offsetX,
       footprintOffsetZ: draft.offsetZ,
+      notes: unitNotes.trim() || null,
     });
     onClose();
   }
 
-  const title = draft?.locationCode
-    ? `Plotas · ${draft.locationCode}`
-    : draft?.rack != null
-      ? `Plotas ant stelažo ${draft.rack} · aukštas ${draft.level}`
-      : "Plotas ant sijos";
+  const title =
+    draft?.rack != null
+      ? `Stelažas ${draft.rack} · ${draft.level === 0 ? "mini" : `${draft.level} aukštas`}`
+      : draft?.locationCode
+        ? formatLocationHuman(draft.locationCode)
+        : "Plotas ant stelažo";
 
   return (
     <Modal open={!!draft} title={title} onClose={onClose}>
       {draft && (
         <div className="space-y-4">
           <p className="text-sm text-stone-600">
-            Pažymėta vieta prekei. Pasirink: naujas užsakymas arba esama siunta.
+            Pažymėta vieta prekei. Priskirk naujam arba esamam užsakymui.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-sm">
@@ -173,38 +188,43 @@ export function ShelfFootprintModal({
                 }
               />
               <span className="mt-0.5 block text-xs text-stone-500">
-                Stelažo gylis: iki {MAX_DEPTH.toFixed(2)} m
+                Iki {MAX_DEPTH.toFixed(1)} m
               </span>
             </label>
           </div>
 
-          <div className="space-y-2 rounded-lg border border-stone-200 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-              Kam priskirti?
-            </p>
-            <label className="flex items-center gap-2 text-sm">
+          <div className="space-y-2 rounded-xl border border-stone-200 bg-stone-50/80 p-3">
+            <p className="section-label">Kam priskirti?</p>
+            <label className="flex items-center gap-2 text-sm text-stone-800">
               <input
                 type="radio"
                 name="shelf-mode"
                 checked={mode === "new"}
                 onChange={() => setMode("new")}
               />
-              Kurti naują užsakymą / siuntą
+              Naujas užsakymas
             </label>
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-sm text-stone-800">
               <input
                 type="radio"
                 name="shelf-mode"
                 checked={mode === "existing"}
                 onChange={() => setMode("existing")}
               />
-              Pasirinkti iš jau sukurtų
+              Jau esamas užsakymas
             </label>
             {mode === "existing" && (
-              <OrderPicker
+              <ExistingOrderAssignFields
                 orders={activeOrders}
-                value={orderId}
-                onChange={setOrderId}
+                units={state.units}
+                orderId={orderId}
+                onOrderIdChange={setOrderId}
+                assignMode={assignMode}
+                onAssignModeChange={setAssignMode}
+                moveUnitId={moveUnitId}
+                onMoveUnitIdChange={setMoveUnitId}
+                unitNotes={unitNotes}
+                onUnitNotesChange={setUnitNotes}
               />
             )}
           </div>
@@ -217,9 +237,12 @@ export function ShelfFootprintModal({
               type="button"
               className="btn-primary"
               onClick={save}
-              disabled={mode === "existing" && !orderId}
+              disabled={
+                mode === "existing" &&
+                (!orderId || (assignMode === "move" && !moveUnitId))
+              }
             >
-              {mode === "new" ? "Toliau — naujas užsakymas" : "Priskirti siuntai"}
+              {mode === "new" ? "Toliau" : "Priskirti užsakymui"}
             </button>
           </div>
         </div>

@@ -122,17 +122,7 @@ export function MobileBottomNav() {
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-900">
                 →
               </span>
-              Atkeliauja (laukiamas)
-            </button>
-            <button
-              type="button"
-              className="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-sm font-semibold text-stone-900 active:bg-stone-100"
-              onClick={() => go("/map?legacy=1")}
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-stone-200 text-stone-800">
-                #
-              </span>
-              Žymėti seną užsakymą
+              Atkeliauja (dar neatvažiavo)
             </button>
             <Link
               href="/archive"

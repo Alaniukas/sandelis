@@ -23,7 +23,7 @@ import {
   locationCode,
   ROOM,
   BAY_DEPTH_M,
-  RACK_LEVEL_Y,
+  rackLevelDefs,
   type OverDoorShelfBox,
   type RackBox,
   type SmallShelfBox,
@@ -888,15 +888,25 @@ function FloorAreas({
               />
             </mesh>
             {floorUnits.map((u, i) => {
-              const cols = Math.ceil(Math.sqrt(floorUnits.length));
+              const n = floorUnits.length;
+              const cols = Math.ceil(Math.sqrt(n));
               const row = Math.floor(i / cols);
               const col = i % cols;
-              const ox = (col - (cols - 1) / 2) * Math.min(a.w * 0.35, 0.9);
-              const oz = (row - (Math.ceil(floorUnits.length / cols) - 1) / 2) * Math.min(a.d * 0.35, 0.85);
+              const fillW = n === 1 ? a.w * 0.9 : a.w * 0.85 / cols;
+              const fillD = n === 1 ? a.d * 0.9 : a.d * 0.85 / Math.ceil(n / cols);
+              const ox =
+                n === 1
+                  ? 0
+                  : (col - (cols - 1) / 2) * Math.min(a.w * 0.42, fillW + 0.1);
+              const oz =
+                n === 1
+                  ? 0
+                  : (row - (Math.ceil(n / cols) - 1) / 2) *
+                    Math.min(a.d * 0.42, fillD + 0.1);
               const order = orders.find((o) => o.id === u.orderId);
               const label = unitShortLabel(order, u);
-              const bw = Math.min(a.w * 0.38, 0.9);
-              const bd = Math.min(a.d * 0.32, 0.85);
+              const bw = Math.max(0.35, fillW);
+              const bd = Math.max(0.35, fillD);
               const pick: PickInfo = {
                 code: a.id,
                 kind: "floor",
@@ -1034,7 +1044,14 @@ function IndustrialRack({
   const [lx, lz] = toLocal(box.x, box.z);
   const { w, d, rack, wall } = box;
   const uprightH = 2.48;
-  const beamYs = RACK_LEVEL_Y;
+  const levelDefs = rackLevelDefs(rack);
+  const beamYs = levelDefs.map((d) => d.y);
+  const badgeY =
+    beamYs.length >= 3
+      ? (beamYs[1] + beamYs[2]) / 2
+      : beamYs.length >= 2
+        ? (beamYs[0] + beamYs[1]) / 2
+        : (beamYs[0] ?? 0.5);
   const uw = 0.08;
   const badgeColor = highlighted
     ? "#f59e0b"
@@ -1169,12 +1186,16 @@ function IndustrialRack({
         </group>
       )}
 
-      {[1, 2, 3].map((level, li) => {
-        const y = beamYs[li];
-        const isGround = level === 1;
+      {levelDefs.map((def) => {
+        const levelKey = def.key;
+        const levelNum = levelKey === "M" ? 0 : levelKey;
+        const y = def.y;
+        const isGround = levelKey === 1;
+        const isMini = !!def.mini;
         return (
-          <group key={level}>
+          <group key={String(levelKey)}>
             {!isGround &&
+              !isMini &&
               ([-d / 2 + 0.05, d / 2 - 0.05] as const).map((bz, bi) => (
               <group key={bi} position={[0, y, bz]}>
                 <mesh castShadow>
@@ -1209,10 +1230,10 @@ function IndustrialRack({
             ))}
 
             {/* wooden deck planks (aukštai 2–3) */}
-            {!isGround &&
+            {!isGround && !isMini &&
               [-0.32, -0.16, 0, 0.16, 0.32].map((ox, i) => (
               <mesh key={i} position={[ox * (w * 0.75), y + 0.03, 0]} castShadow>
-                <boxGeometry args={[0.1, 0.025, d - 0.18]} />
+                <boxGeometry args={[0.1, isMini ? 0.012 : 0.025, d - 0.18]} />
                 <meshStandardMaterial map={maps.wood} roughness={0.88} />
               </mesh>
             ))}
@@ -1227,7 +1248,7 @@ function IndustrialRack({
                   const deckY = y + (isGround ? 0.02 : 0.055);
                   onShelfPointerDown({
                     rack,
-                    level,
+                    level: levelNum,
                     localX: e.point.x - lx,
                     localZ: e.point.z - lz,
                     maxW: w * DECK_W_FRAC,
@@ -1247,14 +1268,18 @@ function IndustrialRack({
                   }
                   e.stopPropagation();
                   onSelect({
-                    code: locationCode(rack, "K", level),
+                    code: locationCode(rack, "K", levelKey),
                     kind: "pallet",
                     rack,
-                    level,
+                    level: levelNum,
                     side: "K",
-                    label: isGround
-                      ? `Stelažas ${rack} · aukštas 1 (prie žemės)`
-                      : `Stelažas ${rack} · aukštas ${level}`,
+                    label: isMini
+                      ? `Stelažas ${rack} · mini (fanera)`
+                      : isGround
+                        ? `Stelažas ${rack} · aukštas 1 (prie žemės)`
+                        : def.tall
+                          ? `Stelažas ${rack} · aukštas ${levelKey} (aukštas)`
+                          : `Stelažas ${rack} · aukštas ${levelKey}`,
                   });
                 }}
                 onPointerOver={() => {
@@ -1265,12 +1290,16 @@ function IndustrialRack({
                 }}
               >
                 <boxGeometry
-                  args={[w * DECK_W_FRAC, isGround ? 0.03 : 0.04, d * DECK_D_FRAC]}
+                  args={[
+                    w * DECK_W_FRAC,
+                    isMini ? 0.02 : isGround ? 0.03 : 0.04,
+                    d * DECK_D_FRAC,
+                  ]}
                 />
                 <meshStandardMaterial
                   color={
-                    (fillAmt.get(locationCode(rack, "K", level)) ?? 0) +
-                      (fillAmt.get(locationCode(rack, "D", level)) ?? 0) >
+                    (fillAmt.get(locationCode(rack, "K", levelKey)) ?? 0) +
+                      (fillAmt.get(locationCode(rack, "D", levelKey)) ?? 0) >
                     0.01
                       ? COLORS.occupied
                       : isGround
@@ -1285,11 +1314,11 @@ function IndustrialRack({
 
             {/* Existing footprints on this level */}
             {footprints
-              .filter((f) => f.level === level)
+              .filter((f) => f.level === levelNum)
               .map((f, fi) => {
                 const pulsing = footprintPulseMatches(pulseFootprint, {
                   rack,
-                  level,
+                  level: levelNum,
                   offsetX: f.offsetX,
                   offsetZ: f.offsetZ,
                 });
@@ -1333,7 +1362,7 @@ function IndustrialRack({
             {shelfPreview &&
               !shelfPreview.locationCode &&
               shelfPreview.rack === rack &&
-              shelfPreview.level === level && (
+              shelfPreview.level === levelNum && (
                 <mesh
                   position={[
                     shelfPreview.offsetX,
@@ -1356,7 +1385,7 @@ function IndustrialRack({
       })}
 
       <group
-        position={[0, (beamYs[1] + beamYs[2]) / 2, aisleZ]}
+        position={[0, badgeY, aisleZ]}
         rotation={[0, badgeRotY, 0]}
         onClick={(e) => {
           if (markMode) return;
@@ -2315,7 +2344,7 @@ function MobileWalkPad({
   const btnSm =
     "pointer-events-auto flex h-9 w-11 items-center justify-center rounded-full bg-stone-900/60 text-sm font-bold text-white active:bg-stone-900";
   return (
-    <div className="pointer-events-none absolute bottom-16 right-3 z-20 flex items-end gap-2 sm:hidden">
+    <div className="pointer-events-none absolute bottom-16 left-3 z-20 flex items-end gap-3 sm:hidden">
       <div className="flex flex-col gap-1">
         <button type="button" className={btnSm} onClick={() => onMove("up")} aria-label="Aukštyn">
           ▲
@@ -2351,6 +2380,7 @@ export const Warehouse3D = forwardRef<
     onPick?: (info: PickInfo) => void;
     preset: ViewPreset;
     markFloorMode?: boolean;
+    moveMode?: boolean;
     onFloorDraftComplete?: (draft: FloorDraft) => void;
     onShelfDraftComplete?: (draft: ShelfDraft) => void;
     highlightRack?: number | null;
@@ -2362,6 +2392,7 @@ export const Warehouse3D = forwardRef<
     onPick,
     preset,
     markFloorMode = false,
+    moveMode = false,
     onFloorDraftComplete,
     onShelfDraftComplete,
     highlightRack = null,
@@ -2376,6 +2407,9 @@ export const Warehouse3D = forwardRef<
   const [mounted, setMounted] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const cameraControlsRef = useRef<CameraControlsImpl | null>(null);
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const canvasGlRef = useRef<THREE.WebGLRenderer | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 640px)");
@@ -2420,6 +2454,21 @@ export const Warehouse3D = forwardRef<
   } | null>(null);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    function onFsChange() {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      const gl = canvasGlRef.current;
+      if (gl && wrapRef.current) {
+        const w = wrapRef.current.clientWidth;
+        const h = wrapRef.current.clientHeight;
+        gl.setSize(w, h, false);
+      }
+    }
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
 
   useEffect(() => {
     if (!markFloorMode) {
@@ -2673,6 +2722,7 @@ export const Warehouse3D = forwardRef<
           onCreated={({ camera, gl }) => {
             camera.up.set(0, 1, 0);
             gl.setClearColor("#c8ccd2");
+            canvasGlRef.current = gl;
           }}
         >
           <Suspense fallback={null}>
@@ -2703,7 +2753,7 @@ export const Warehouse3D = forwardRef<
           </Suspense>
         </Canvas>
 
-        {isMobileViewport && !markFloorMode && (
+        {isMobileViewport && !markFloorMode && !isFullscreen && !shelfDrawingUi && (
           <MobileWalkPad
             onMove={(action) => {
               const c = cameraControlsRef.current;
@@ -2741,7 +2791,9 @@ export const Warehouse3D = forwardRef<
           <span className="rounded-full bg-stone-900/70 px-3 py-1.5 text-center text-[10px] font-medium leading-snug text-white sm:text-[11px]">
             {markFloorMode
               ? "Tempk ant grindų — pažymėk plotą"
-              : shelfDrawingUi
+              : moveMode
+                ? "Perkėlimas: spausk žalią vietą arba nubrėžk plotą ant stelažo"
+                : shelfDrawingUi
                 ? isMobileViewport
                   ? "Tempk pirštu — atleisk kai baigsi"
                   : "Tempk — paleisk mygtuką kai baigsi"

@@ -28,7 +28,7 @@ export function HintLabel({ label, hint, className, block }: Props) {
       <span
         className={
           block
-            ? "font-display text-3xl font-semibold md:text-4xl text-stone-900"
+            ? "font-display text-3xl font-semibold text-stone-900 md:text-4xl"
             : "text-sm font-medium text-stone-700"
         }
       >
@@ -38,12 +38,11 @@ export function HintLabel({ label, hint, className, block }: Props) {
         <button
           type="button"
           aria-describedby={show ? hintId : undefined}
-          className="flex h-4 w-4 items-center justify-center rounded-full border border-stone-300 bg-stone-50 text-[10px] font-bold leading-none text-stone-500 transition hover:border-stone-400 hover:bg-white hover:text-stone-800"
-          onMouseEnter={() => setShow(true)}
-          onMouseLeave={() => setShow(false)}
-          onFocus={() => setShow(true)}
+          aria-expanded={show}
+          className="flex h-5 w-5 items-center justify-center rounded-full border border-stone-300 bg-white text-[11px] font-bold leading-none text-stone-500 transition hover:border-stone-400 hover:text-stone-800"
+          onClick={() => setShow((v) => !v)}
           onBlur={() => setShow(false)}
-          aria-label="Daugiau informacijos"
+          aria-label="Paaiškinimas"
         >
           ?
         </button>
@@ -51,7 +50,7 @@ export function HintLabel({ label, hint, className, block }: Props) {
           <span
             id={hintId}
             role="tooltip"
-            className="absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 rounded-lg border border-stone-200 bg-stone-900 px-3 py-2 text-xs font-normal leading-snug text-white shadow-lg"
+            className="absolute bottom-full left-1/2 z-50 mb-2 w-60 -translate-x-1/2 rounded-xl border border-stone-200 bg-stone-900 px-3 py-2.5 text-left text-xs font-normal leading-snug text-white shadow-lg sm:w-64"
           >
             {hint}
           </span>

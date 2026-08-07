@@ -11,7 +11,7 @@ export default function NewShipmentPage() {
   }, [router]);
   return (
     <p className="py-16 text-center text-sm text-stone-500">
-      Atidaromas siuntos langas…
+      Atidaromas atvykimo langas…
     </p>
   );
 }

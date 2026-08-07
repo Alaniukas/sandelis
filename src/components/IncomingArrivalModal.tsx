@@ -62,7 +62,14 @@ export function IncomingArrivalModal({
       attachmentStoragePath,
     });
     const shipment = state.shipments[0];
-    void pushWmsStateNow(state);
+    try {
+      await pushWmsStateNow(state);
+    } catch {
+      setError(
+        "Išsaugota šiame įrenginyje, bet nepavyko nusiųsti į kitus — patikrink internetą ir bandyk dar kartą.",
+      );
+      return;
+    }
     reset();
     onClose();
     onCreated?.(shipment.id);
@@ -80,12 +87,12 @@ export function IncomingArrivalModal({
       <div className="space-y-4">
         <HintLabel
           label="Kas atkeliauja?"
-          hint="Trumpas aprašymas — kaip ant lapo prie lentos. DI čia nebūtinas; vėliau atvykus užregistruosi pilnai."
+          hint="Trumpas aprašymas, kaip ant lapo prie lentos. Detales vėliau užpildysi, kai prekės atvažiuos."
           className="text-sm font-medium text-stone-700"
         />
         <input
           className="field"
-          placeholder="Pvz. Iguzzini DILED, ~4 dėžės, Paneriu"
+          placeholder="Pvz. Iguzzini Diled, ~4 dėžės, Panerių"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
@@ -97,7 +104,7 @@ export function IncomingArrivalModal({
           <textarea
             className="field min-h-[5rem]"
             rows={3}
-            placeholder="Ką žinai: klientas, vežėjas, kas laukia…"
+            placeholder="Klientas, kas laukia, ką žinai…"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
@@ -118,7 +125,7 @@ export function IncomingArrivalModal({
 
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-stone-700">
-            PDF / el. laiškas (nebūtina)
+            Dokumentas ar nuotrauka (nebūtina)
           </span>
           <input
             type="file"
@@ -127,7 +134,7 @@ export function IncomingArrivalModal({
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
           <p className="mt-1 text-xs text-stone-500">
-            Priedas saugomas serveryje — galėsi atsidaryti iš bet kurio įrenginio.
+            Galėsi atidaryti vėliau iš telefono ar kompiuterio.
           </p>
         </label>
 
@@ -146,7 +153,7 @@ export function IncomingArrivalModal({
             className="btn-primary w-full sm:w-auto"
             onClick={save}
           >
-            Išsaugoti — rodoma „Laukiami atvykimai“
+            Išsaugoti
           </button>
         </div>
       </div>

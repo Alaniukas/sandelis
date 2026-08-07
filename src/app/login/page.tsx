@@ -32,7 +32,7 @@ function LoginForm() {
       if (!res.ok) {
         if (res.status === 503) {
           setError(
-            "Prisijungimas nesukonfigūruotas serveryje — Vercel env: WMS_AUTH_USERNAME, WMS_AUTH_EMAIL, NEXT_PUBLIC_SUPABASE_*.",
+            "Prisijungimas dar nesutvarkytas — trūksta nustatymų šiame kompiuteryje.",
           );
         } else {
           setError("Neteisingas vartotojo vardas arba slaptažodis.");
@@ -57,21 +57,22 @@ function LoginForm() {
             W
           </span>
           <div>
-            <h1 className="font-display text-xl font-semibold">Sandėlio WMS</h1>
-            <p className="text-sm text-stone-500">Tik komandos nariams</p>
+            <h1 className="font-display text-xl font-semibold">Sandėlis</h1>
+            <p className="text-sm text-stone-500">Prisijunk, kad tęstum darbą</p>
           </div>
         </div>
 
         {!configured && (
           <p className="mb-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            Supabase nesukonfigūruotas — patikrink env Vercel projekte.
+            Prisijungimas dar nesutvarkytas šiame kompiuteryje — trūksta
+            nustatymų.
           </p>
         )}
 
         {(errorParam === "auth" || errorParam === "config") && (
           <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">
             {errorParam === "config"
-              ? "Serverio konfigūracijos klaida."
+              ? "Nepavyko paleisti prisijungimo — patikrink nustatymus."
               : "Prisijungimas nepavyko — bandyk dar kartą."}
           </p>
         )}

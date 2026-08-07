@@ -144,12 +144,12 @@ export function resolveUnitMapFocus(
     };
   }
 
-  if (loc.rack && loc.level) {
+  if (loc.rack) {
     const box = getRackLayout().find((b) => b.rack === loc.rack);
     if (!box) return null;
     const [lx, lz] = toLocal(box.x, box.z);
-    const level = loc.level;
-    const beamY = rackLevelY(level);
+    const levelNum = loc.code.endsWith("-M") ? 0 : (loc.level ?? 1);
+    const beamY = rackLevelY(loc.rack, levelNum);
     const ox = unit.footprintOffsetX ?? 0;
     const oz = unit.footprintOffsetZ ?? 0;
     const w = unit.footprintW ?? 1.1;
@@ -163,7 +163,7 @@ export function resolveUnitMapFocus(
       selectedCode: loc.code,
       pulse: {
         rack: loc.rack,
-        level,
+        level: levelNum,
         offsetX: ox,
         offsetZ: oz,
         w,

@@ -4,11 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import {
   assignOrderToFloor,
-  createFloorArea,
   deleteFloorArea,
+  getOrCreateFloorAreaForDraft,
   loadState,
 } from "@/lib/demo-store";
-import { OrderPicker } from "@/components/OrderPicker";
+import {
+  ExistingOrderAssignFields,
+  type ExistingAssignMode,
+} from "@/components/ExistingOrderAssignFields";
 import { useWms } from "@/lib/use-wms";
 
 export type FloorDraft = {
@@ -25,13 +28,16 @@ export function FloorAreaModal({
 }: {
   draft: FloorDraft | null;
   onClose: () => void;
-  /** Po ploto sukūrimo — atidaryti Nauja siunta su floorAreaId */
+  /** Po ploto sukūrimo — atidaryti naują atvykimą su floorAreaId */
   onCreateNew: (floorAreaId: string, label: string) => void;
 }) {
   const state = useWms();
   const [label, setLabel] = useState("Ant grindų");
-  const [notes, setNotes] = useState("");
+  const [areaNotes, setAreaNotes] = useState("");
+  const [unitNotes, setUnitNotes] = useState("");
   const [mode, setMode] = useState<"new" | "existing">("new");
+  const [assignMode, setAssignMode] = useState<ExistingAssignMode>("new");
+  const [moveUnitId, setMoveUnitId] = useState("");
   const [orderId, setOrderId] = useState("");
 
   const activeOrders = useMemo(
@@ -42,30 +48,34 @@ export function FloorAreaModal({
   useEffect(() => {
     if (!draft) return;
     setLabel("Ant grindų");
-    setNotes("");
+    setAreaNotes("");
+    setUnitNotes("");
     setMode("new");
+    setAssignMode("new");
+    setMoveUnitId("");
     setOrderId(activeOrders[0]?.id ?? "");
   }, [draft, activeOrders]);
 
   function reset() {
     setLabel("Ant grindų");
-    setNotes("");
+    setAreaNotes("");
+    setUnitNotes("");
     setMode("new");
+    setAssignMode("new");
+    setMoveUnitId("");
     setOrderId("");
   }
 
   function save() {
     if (!draft) return;
-    let s = loadState();
-    s = createFloorArea(s, {
-      label: label.trim() || "Ant grindų",
+    const { state: next, area } = getOrCreateFloorAreaForDraft(loadState(), {
       x: draft.x,
       z: draft.z,
       w: draft.w,
       d: draft.d,
-      notes: notes.trim(),
+      label: label.trim() || "Ant grindų",
+      notes: areaNotes.trim(),
     });
-    const area = s.floorAreas[0];
 
     if (mode === "new") {
       reset();
@@ -75,7 +85,12 @@ export function FloorAreaModal({
     }
 
     if (!orderId) return;
-    assignOrderToFloor(s, orderId, area.id);
+    if (assignMode === "move" && !moveUnitId) return;
+    assignOrderToFloor(next, orderId, area.id, {
+      assignMode,
+      unitId: assignMode === "move" ? moveUnitId : undefined,
+      notes: unitNotes.trim() || null,
+    });
     reset();
     onClose();
   }
@@ -104,42 +119,49 @@ export function FloorAreaModal({
             />
           </label>
           <label className="block text-sm">
-            <span className="font-medium text-stone-700">Pastabos</span>
+            <span className="font-medium text-stone-700">
+              {mode === "new" ? "Ploto pastabos" : "Ploto pastabos (nebūtina)"}
+            </span>
             <textarea
               className="field mt-1"
               rows={2}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              value={areaNotes}
+              onChange={(e) => setAreaNotes(e.target.value)}
             />
           </label>
 
-          <div className="space-y-2 rounded-lg border border-stone-200 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-              Kam priskirti?
-            </p>
-            <label className="flex items-center gap-2 text-sm">
+          <div className="space-y-2 rounded-xl border border-stone-200 bg-stone-50/80 p-3">
+            <p className="section-label">Kam priskirti?</p>
+            <label className="flex items-center gap-2 text-sm text-stone-800">
               <input
                 type="radio"
                 name="floor-mode"
                 checked={mode === "new"}
                 onChange={() => setMode("new")}
               />
-              Kurti naują užsakymą / siuntą
+              Naujas užsakymas
             </label>
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-sm text-stone-800">
               <input
                 type="radio"
                 name="floor-mode"
                 checked={mode === "existing"}
                 onChange={() => setMode("existing")}
               />
-              Pasirinkti iš jau sukurtų
+              Jau esamas užsakymas
             </label>
             {mode === "existing" && (
-              <OrderPicker
+              <ExistingOrderAssignFields
                 orders={activeOrders}
-                value={orderId}
-                onChange={setOrderId}
+                units={state.units}
+                orderId={orderId}
+                onOrderIdChange={setOrderId}
+                assignMode={assignMode}
+                onAssignModeChange={setAssignMode}
+                moveUnitId={moveUnitId}
+                onMoveUnitIdChange={setMoveUnitId}
+                unitNotes={unitNotes}
+                onUnitNotesChange={setUnitNotes}
               />
             )}
           </div>
@@ -159,9 +181,12 @@ export function FloorAreaModal({
               type="button"
               className="btn-primary"
               onClick={save}
-              disabled={mode === "existing" && !orderId}
+              disabled={
+                mode === "existing" &&
+                (!orderId || (assignMode === "move" && !moveUnitId))
+              }
             >
-              {mode === "new" ? "Toliau — naujas užsakymas" : "Priskirti siuntai"}
+              {mode === "new" ? "Toliau" : "Priskirti užsakymui"}
             </button>
           </div>
         </div>

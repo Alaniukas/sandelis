@@ -1,7 +1,7 @@
 "use client";
 
 import { v4 as uuid } from "uuid";
-import { buildLocations, BAY_DEPTH_M } from "./locations";
+import { buildLocations, BAY_DEPTH_M, locationCode, zoneForRack } from "./locations";
 import type {
   AppState,
   Defect,
@@ -64,6 +64,7 @@ function migrateUnit(u: Unit): Unit {
     footprintOffsetX,
     footprintOffsetZ: footprintOffsetZ ?? 0,
     previousLocationId: u.previousLocationId ?? null,
+    previousFloorAreaId: u.previousFloorAreaId ?? null,
   };
 }
 
@@ -247,6 +248,78 @@ function extractAttachmentStoragePath(url: string): string | null {
   return null;
 }
 
+function migrateRackLevelUnits(state: AppState): AppState {
+  const noLevel3 = new Set([1, 9, 10]);
+  let changed = false;
+  let units = state.units.map((u) => {
+    if (!u.locationId) return u;
+    const loc = state.locations.find((l) => l.id === u.locationId);
+    if (!loc?.rack || !noLevel3.has(loc.rack) || loc.level !== 3) return u;
+    const side = loc.side ?? "K";
+    const newCode = locationCode(loc.rack, side, 2);
+    const newLoc = state.locations.find(
+      (l) => l.code === newCode || l.id === newCode,
+    );
+    if (!newLoc) return u;
+    changed = true;
+    return {
+      ...u,
+      locationId: newLoc.id,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  units = units.map((u) => {
+    if (!u.locationId) return u;
+    const loc = state.locations.find((l) => l.id === u.locationId);
+    if (loc?.rack !== 13 || loc.level !== 3) return u;
+    const side = loc.side ?? "K";
+    const zone = zoneForRack(13);
+    const newCode = `${zone}-13-${side}-2`;
+    const newLoc = state.locations.find(
+      (l) => l.code === newCode || l.id === newCode,
+    );
+    if (!newLoc) return u;
+    changed = true;
+    return {
+      ...u,
+      locationId: newLoc.id,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  units = units.map((u) => {
+    if (!u.locationId) return u;
+    const loc = state.locations.find((l) => l.id === u.locationId);
+    if (loc?.rack !== 12 || loc.level !== 2) return u;
+    const order = state.orders.find((o) => o.id === u.orderId);
+    const blob = `${order?.project ?? ""} ${order?.client ?? ""} ${u.labelTitle ?? ""}`.toLowerCase();
+    if (!/donatas|sira|sofa/.test(blob)) return u;
+    const side = loc.side ?? "K";
+    const l3Code = locationCode(12, side, 3);
+    const l3Loc = state.locations.find(
+      (l) => l.code === l3Code || l.id === l3Code,
+    );
+    if (!l3Loc) return u;
+    const occupied = state.units.some(
+      (other) =>
+        other.id !== u.id &&
+        other.locationId === l3Loc.id &&
+        !["issued", "archived"].includes(other.status),
+    );
+    if (occupied) return u;
+    changed = true;
+    return {
+      ...u,
+      locationId: l3Loc.id,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  if (!changed) return state;
+  return { ...state, units };
+}
+
 function migrateShipmentAttachments(state: AppState): AppState {
   const shipments = state.shipments.map((s) => {
     if (s.attachmentStoragePath || !s.attachmentUrl) return s;
@@ -258,6 +331,21 @@ function migrateShipmentAttachments(state: AppState): AppState {
   return { ...state, shipments };
 }
 
+function pruneEmptyFloorAreas(state: AppState): AppState {
+  const occupied = new Set(
+    state.units
+      .filter(
+        (u) =>
+          u.floorAreaId &&
+          ["stored", "received", "staged"].includes(u.status),
+      )
+      .map((u) => u.floorAreaId as string),
+  );
+  const floorAreas = state.floorAreas.filter((f) => occupied.has(f.id));
+  if (floorAreas.length === state.floorAreas.length) return state;
+  return { ...state, floorAreas };
+}
+
 function applyDataMigrations(state: AppState): AppState {
   let s = state;
   s = mergeMissingLocations(s);
@@ -265,6 +353,8 @@ function applyDataMigrations(state: AppState): AppState {
   s = consolidateDuplicatePlacedUnits(s);
   s = purgeSeedFloorAreas(s);
   s = migrateShipmentAttachments(s);
+  s = migrateRackLevelUnits(s);
+  s = pruneEmptyFloorAreas(s);
   return s;
 }
 
@@ -317,7 +407,10 @@ export function saveState(state: AppState) {
   localStorage.setItem(KEY, JSON.stringify(state));
   window.dispatchEvent(new Event("wms-updated"));
   if (typeof window !== "undefined") {
-    void import("./wms-sync").then((m) => m.scheduleWmsSync(state));
+    void import("./wms-sync").then((m) => {
+      m.markLocalDirty();
+      m.scheduleWmsSync(state);
+    });
   }
 }
 
@@ -702,6 +795,92 @@ export function createQuickOrder(
   });
 }
 
+function floorRectOverlap(
+  ax: number,
+  az: number,
+  aw: number,
+  ad: number,
+  bx: number,
+  bz: number,
+  bw: number,
+  bd: number,
+): number {
+  const overlapW =
+    Math.min(ax + aw / 2, bx + bw / 2) - Math.max(ax - aw / 2, bx - bw / 2);
+  const overlapD =
+    Math.min(az + ad / 2, bz + bd / 2) - Math.max(az - ad / 2, bz - bd / 2);
+  if (overlapW <= 0 || overlapD <= 0) return 0;
+  return overlapW * overlapD;
+}
+
+/** Randa esamą grindų plotą, jei naujas stačiakampis daugiausia sutampa su senu. */
+export function findOverlappingFloorArea(
+  state: AppState,
+  x: number,
+  z: number,
+  w: number,
+  d: number,
+): FloorArea | null {
+  const draftArea = Math.max(0.01, w * d);
+  let best: FloorArea | null = null;
+  let bestRatio = 0;
+  for (const f of state.floorAreas) {
+    const overlap = floorRectOverlap(x, z, w, d, f.x, f.z, f.w, f.d);
+    const ratio = overlap / Math.min(draftArea, f.w * f.d);
+    if (ratio > 0.45 && ratio > bestRatio) {
+      best = f;
+      bestRatio = ratio;
+    }
+  }
+  return best;
+}
+
+export function getOrCreateFloorAreaForDraft(
+  state: AppState,
+  draft: {
+    x: number;
+    z: number;
+    w: number;
+    d: number;
+    label?: string;
+    notes?: string;
+  },
+): { state: AppState; area: FloorArea } {
+  const existing = findOverlappingFloorArea(
+    state,
+    draft.x,
+    draft.z,
+    draft.w,
+    draft.d,
+  );
+  if (existing) {
+    const label = draft.label?.trim();
+    const notes = draft.notes?.trim();
+    if (
+      (label && label !== existing.label) ||
+      (notes && notes !== existing.notes)
+    ) {
+      const next = updateFloorArea(state, existing.id, {
+        label: label || existing.label,
+        notes: notes || existing.notes,
+      });
+      const area = next.floorAreas.find((f) => f.id === existing.id)!;
+      return { state: next, area };
+    }
+    return { state, area: existing };
+  }
+
+  const next = createFloorArea(state, {
+    label: draft.label || "Ant grindų",
+    x: draft.x,
+    z: draft.z,
+    w: draft.w,
+    d: draft.d,
+    notes: draft.notes || "",
+  });
+  return { state: next, area: next.floorAreas[0] };
+}
+
 export function createFloorArea(
   state: AppState,
   area: Omit<FloorArea, "id" | "createdAt" | "orderId"> & {
@@ -850,10 +1029,12 @@ export function placeUnit(
     footprintD?: number | null;
     footprintOffsetX?: number | null;
     footprintOffsetZ?: number | null;
+    notes?: string | null;
   },
 ): AppState {
   const now = new Date().toISOString();
   const span = opts?.slotSpan ?? "full";
+  const noteText = opts?.notes?.trim();
   const next = {
     ...state,
     units: state.units.map((u) =>
@@ -872,6 +1053,7 @@ export function placeUnit(
             footprintD: opts?.footprintD ?? u.footprintD,
             footprintOffsetX: opts?.footprintOffsetX ?? u.footprintOffsetX,
             footprintOffsetZ: opts?.footprintOffsetZ ?? u.footprintOffsetZ,
+            notes: noteText || u.notes,
             status: "stored" as UnitStatus,
             updatedAt: now,
           }
@@ -886,9 +1068,11 @@ export function placeUnitOnFloor(
   state: AppState,
   unitId: string,
   floorAreaId: string,
+  opts?: { notes?: string | null },
 ): AppState {
   const now = new Date().toISOString();
   const unit = state.units.find((u) => u.id === unitId);
+  const noteText = opts?.notes?.trim();
   const next = {
     ...state,
     units: state.units.map((u) =>
@@ -904,6 +1088,7 @@ export function placeUnitOnFloor(
             footprintD: null,
             footprintOffsetX: null,
             footprintOffsetZ: null,
+            notes: noteText || u.notes,
             status: "stored" as UnitStatus,
             updatedAt: now,
           }
@@ -924,11 +1109,14 @@ export function assignOrderToShelf(
   state: AppState,
   orderId: string,
   opts: {
+    assignMode: "new" | "move";
+    unitId?: string;
     locationId: string;
     footprintW: number;
     footprintD: number;
     footprintOffsetX?: number | null;
     footprintOffsetZ?: number | null;
+    notes?: string | null;
   },
 ): AppState {
   const order = state.orders.find((o) => o.id === orderId);
@@ -940,21 +1128,25 @@ export function assignOrderToShelf(
       u.status !== "issued" &&
       u.status !== "archived",
   );
-  const free = orderUnits.find((u) => !u.locationId && !u.floorAreaId);
   const fw = opts.footprintW;
   const fd = opts.footprintD;
   const fpX = opts.footprintOffsetX ?? 0;
   const fpZ = opts.footprintOffsetZ ?? 0;
   const span = fw < 0.75 ? ("half" as const) : ("full" as const);
+  const noteText = opts.notes?.trim() ?? "";
 
-  if (free) {
-    return placeUnit(state, free.id, opts.locationId, {
+  if (opts.assignMode === "move") {
+    if (!opts.unitId) return state;
+    const moving = state.units.find((u) => u.id === opts.unitId);
+    if (!moving || moving.orderId !== orderId) return state;
+    return placeUnit(state, opts.unitId, opts.locationId, {
       footprintW: fw,
       footprintD: fd,
       footprintOffsetX: fpX,
       footprintOffsetZ: fpZ,
       slotSpan: span,
       slotHalf: span === "half" ? (fpX < 0 ? "L" : "R") : null,
+      notes: noteText || null,
     });
   }
 
@@ -980,7 +1172,7 @@ export function assignOrderToShelf(
     qrToken: uuid().replace(/-/g, "").slice(0, 16),
     labelTitle: order.project || order.orderCode || "Siunta",
     status: "stored",
-    notes: "",
+    notes: noteText,
     createdAt: now,
     updatedAt: now,
   };
@@ -1002,19 +1194,30 @@ export function assignOrderToFloor(
   state: AppState,
   orderId: string,
   floorAreaId: string,
+  opts: {
+    assignMode: "new" | "move";
+    unitId?: string;
+    notes?: string | null;
+  },
 ): AppState {
   const order = state.orders.find((o) => o.id === orderId);
   if (!order) return state;
   const now = new Date().toISOString();
+  const noteText = opts.notes?.trim() ?? "";
   const orderUnits = state.units.filter(
     (u) =>
       u.orderId === orderId &&
       u.status !== "issued" &&
       u.status !== "archived",
   );
-  const free = orderUnits.find((u) => !u.locationId && !u.floorAreaId);
-  if (free) {
-    return placeUnitOnFloor(state, free.id, floorAreaId);
+
+  if (opts.assignMode === "move") {
+    if (!opts.unitId) return state;
+    const moving = state.units.find((u) => u.id === opts.unitId);
+    if (!moving || moving.orderId !== orderId) return state;
+    return placeUnitOnFloor(state, opts.unitId, floorAreaId, {
+      notes: noteText || null,
+    });
   }
 
   const shipment =
@@ -1039,7 +1242,7 @@ export function assignOrderToFloor(
     qrToken: uuid().replace(/-/g, "").slice(0, 16),
     labelTitle: order.project || order.orderCode || "Siunta",
     status: "stored",
-    notes: "",
+    notes: noteText,
     createdAt: now,
     updatedAt: now,
   };
@@ -1087,9 +1290,18 @@ export function issueOrder(
   notes: string,
 ): AppState {
   const now = new Date().toISOString();
-  const unitIds = state.units
-    .filter((u) => u.orderId === orderId && u.status !== "archived" && u.status !== "issued")
-    .map((u) => u.id);
+  const orderUnits = state.units.filter(
+    (u) =>
+      u.orderId === orderId &&
+      u.status !== "archived" &&
+      u.status !== "issued",
+  );
+  const unitIds = orderUnits.map((u) => u.id);
+  const unitPlacements = orderUnits.map((u) => ({
+    unitId: u.id,
+    locationId: u.locationId,
+    floorAreaId: u.floorAreaId,
+  }));
 
   const handover: Handover = {
     id: uuid(),
@@ -1097,16 +1309,20 @@ export function issueOrder(
     recipientName,
     notes,
     unitIds,
+    unitPlacements,
     issuedAt: now,
   };
 
-  const next = {
+  const next = pruneEmptyFloorAreas({
     ...state,
     units: state.units.map((u) =>
       unitIds.includes(u.id)
         ? {
             ...u,
+            previousLocationId: u.locationId,
+            previousFloorAreaId: u.floorAreaId,
             locationId: null,
+            floorAreaId: null,
             status: "issued" as UnitStatus,
             updatedAt: now,
           }
@@ -1118,31 +1334,37 @@ export function issueOrder(
         : o,
     ),
     handovers: [handover, ...state.handovers],
-  };
+  });
   saveState(next);
   return next;
 }
 
-/** Pažymėti vieną dėžę išvykusią per QR — atlaisvina vietą, archyvuoja užsakymą jei paskutinė */
-export function issueUnitFromQr(
+/** Viena dėžė — klientas atsiėmė (iš žemėlapio ar QR). */
+export function issueUnitToClient(
   state: AppState,
-  qrToken: string,
+  unitId: string,
+  recipientName: string,
 ): AppState | null {
-  const unit = state.units.find((u) => u.qrToken === qrToken);
+  const unit = state.units.find((u) => u.id === unitId);
   if (!unit || unit.status === "issued" || unit.status === "archived") {
     return null;
   }
 
   const now = new Date().toISOString();
-  const floorId = unit.floorAreaId;
   const loc = state.locations.find((l) => l.id === unit.locationId);
+  const placement = {
+    unitId: unit.id,
+    locationId: unit.locationId,
+    floorAreaId: unit.floorAreaId,
+  };
 
   const handover: Handover = {
     id: uuid(),
     orderId: unit.orderId,
-    recipientName: "QR atsiėmimas",
+    recipientName,
     notes: loc ? `Vieta ${loc.code}` : "",
     unitIds: [unit.id],
+    unitPlacements: [placement],
     issuedAt: now,
   };
 
@@ -1150,6 +1372,8 @@ export function issueUnitFromQr(
     u.id === unit.id
       ? {
           ...u,
+          previousLocationId: u.locationId,
+          previousFloorAreaId: u.floorAreaId,
           locationId: null,
           floorAreaId: null,
           status: "issued" as UnitStatus,
@@ -1166,7 +1390,7 @@ export function issueUnitFromQr(
       u.status !== "issued",
   );
 
-  const next = {
+  const next = pruneEmptyFloorAreas({
     ...state,
     units,
     orders: orderStillActive
@@ -1177,14 +1401,116 @@ export function issueUnitFromQr(
             : o,
         ),
     handovers: [handover, ...state.handovers],
-    floorAreas: floorId
-      ? state.floorAreas.map((f) =>
-          f.id === floorId && f.orderId === unit.orderId
-            ? { ...f, orderId: null }
-            : f,
-        )
-      : state.floorAreas,
+  });
+  saveState(next);
+  return next;
+}
+
+/** Grąžina archyvuotą užsakymą į sandėlį su buvusiomis vietomis. */
+export function restoreOrderFromArchive(
+  state: AppState,
+  orderId: string,
+): AppState {
+  const now = new Date().toISOString();
+  const handover = state.handovers.find((h) => h.orderId === orderId);
+  const placements = new Map(
+    (handover?.unitPlacements ?? []).map((p) => [p.unitId, p]),
+  );
+
+  const units = state.units.map((u) => {
+    if (u.orderId !== orderId) return u;
+    if (u.status !== "issued" && u.status !== "archived") return u;
+    const snap = placements.get(u.id);
+    const locationId =
+      snap?.locationId ?? u.previousLocationId ?? u.locationId ?? null;
+    const floorAreaId =
+      snap?.floorAreaId ?? u.previousFloorAreaId ?? u.floorAreaId ?? null;
+    return {
+      ...u,
+      locationId,
+      floorAreaId,
+      previousLocationId: null,
+      previousFloorAreaId: null,
+      status: (locationId || floorAreaId ? "stored" : "received") as UnitStatus,
+      updatedAt: now,
+    };
+  });
+
+  const next = {
+    ...state,
+    orders: state.orders.map((o) =>
+      o.id === orderId ? { ...o, status: "active" as const, updatedAt: now } : o,
+    ),
+    units,
+    handovers: state.handovers.filter((h) => h.orderId !== orderId),
   };
+  saveState(next);
+  return next;
+}
+
+/** Pažymėti vieną dėžę išvykusią per QR — atlaisvina vietą, archyvuoja užsakymą jei paskutinė */
+export function issueUnitFromQr(
+  state: AppState,
+  qrToken: string,
+): AppState | null {
+  const unit = state.units.find((u) => u.qrToken === qrToken);
+  if (!unit || unit.status === "issued" || unit.status === "archived") {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const loc = state.locations.find((l) => l.id === unit.locationId);
+
+  const handover: Handover = {
+    id: uuid(),
+    orderId: unit.orderId,
+    recipientName: "QR atsiėmimas",
+    notes: loc ? `Vieta ${loc.code}` : "",
+    unitIds: [unit.id],
+    unitPlacements: [
+      {
+        unitId: unit.id,
+        locationId: unit.locationId,
+        floorAreaId: unit.floorAreaId,
+      },
+    ],
+    issuedAt: now,
+  };
+
+  const units = state.units.map((u) =>
+    u.id === unit.id
+      ? {
+          ...u,
+          previousLocationId: u.locationId,
+          previousFloorAreaId: u.floorAreaId,
+          locationId: null,
+          floorAreaId: null,
+          status: "issued" as UnitStatus,
+          updatedAt: now,
+        }
+      : u,
+  );
+
+  const orderStillActive = units.some(
+    (u) =>
+      u.orderId === unit.orderId &&
+      u.id !== unit.id &&
+      u.status !== "archived" &&
+      u.status !== "issued",
+  );
+
+  const next = pruneEmptyFloorAreas({
+    ...state,
+    units,
+    orders: orderStillActive
+      ? state.orders
+      : state.orders.map((o) =>
+          o.id === unit.orderId
+            ? { ...o, status: "archived" as const, updatedAt: now }
+            : o,
+        ),
+    handovers: [handover, ...state.handovers],
+  });
   saveState(next);
   return next;
 }
@@ -1363,7 +1689,6 @@ export function removeUnitPlacement(
   const unit = state.units.find((u) => u.id === unitId);
   if (!unit) return state;
 
-  const floorId = unit.floorAreaId;
   const units = state.units.map((u) =>
     u.id === unitId
       ? {
@@ -1391,7 +1716,7 @@ export function removeUnitPlacement(
       u.status !== "issued",
   );
 
-  const next = {
+  const next = pruneEmptyFloorAreas({
     ...state,
     units,
     orders: orderStillHasUnits
@@ -1401,13 +1726,87 @@ export function removeUnitPlacement(
             ? { ...o, status: "archived" as const, updatedAt: now }
             : o,
         ),
-    floorAreas: floorId
-      ? state.floorAreas.map((f) =>
-          f.id === floorId && f.orderId === unit.orderId
-            ? { ...f, orderId: null }
-            : f,
-        )
-      : state.floorAreas,
+  });
+  saveState(next);
+  return next;
+}
+
+/** Nuima prekę iš vietos, bet nearchyvuoja užsakymo. */
+export function unplaceUnit(state: AppState, unitId: string): AppState {
+  const now = new Date().toISOString();
+  const unit = state.units.find((u) => u.id === unitId);
+  if (!unit) return state;
+
+  const next = pruneEmptyFloorAreas({
+    ...state,
+    units: state.units.map((u) =>
+      u.id === unitId
+        ? {
+            ...u,
+            locationId: null,
+            floorAreaId: null,
+            occupiesEntireRack: false,
+            footprintW: null,
+            footprintD: null,
+            footprintOffsetX: null,
+            footprintOffsetZ: null,
+            slotSpan: "full" as const,
+            slotHalf: null,
+            status:
+              u.status === "stored" || u.status === "staged"
+                ? ("received" as UnitStatus)
+                : u.status,
+            updatedAt: now,
+          }
+        : u,
+    ),
+  });
+  saveState(next);
+  return next;
+}
+
+/** Perkelia prekę į naują vietą arba ant grindų. */
+export function moveUnitToLocation(
+  state: AppState,
+  unitId: string,
+  target: {
+    locationId?: string;
+    floorAreaId?: string;
+    footprintW?: number | null;
+    footprintD?: number | null;
+    footprintOffsetX?: number | null;
+    footprintOffsetZ?: number | null;
+  },
+): AppState {
+  if (target.floorAreaId) {
+    return placeUnitOnFloor(state, unitId, target.floorAreaId);
+  }
+  if (target.locationId) {
+    return placeUnit(state, unitId, target.locationId, {
+      footprintW: target.footprintW,
+      footprintD: target.footprintD,
+      footprintOffsetX: target.footprintOffsetX,
+      footprintOffsetZ: target.footprintOffsetZ,
+    });
+  }
+  return state;
+}
+
+/** Ištrina užsakymą ir visas susijusias dėžes (negrįžtama). */
+export function deleteOrder(state: AppState, orderId: string): AppState {
+  const unitIds = new Set(
+    state.units.filter((u) => u.orderId === orderId).map((u) => u.id),
+  );
+  const next: AppState = {
+    ...state,
+    orders: state.orders.filter((o) => o.id !== orderId),
+    units: state.units.filter((u) => u.orderId !== orderId),
+    shipments: state.shipments.filter((s) => s.orderId !== orderId),
+    handovers: state.handovers.filter((h) => h.orderId !== orderId),
+    floorAreas: state.floorAreas.map((f) =>
+      f.orderId === orderId ? { ...f, orderId: null } : f,
+    ),
+    defects: state.defects.filter((d) => !unitIds.has(d.unitId ?? "")),
   };
   saveState(next);
   return next;
@@ -1486,6 +1885,7 @@ export interface DashboardArrival {
   project: string;
   carrier: string;
   expectedAt: string | null;
+  hasAttachment: boolean;
 }
 
 export interface DashboardSummary {
@@ -1497,6 +1897,15 @@ export interface DashboardSummary {
   occupiedSlots: number;
   totalSlots: number;
   occupancyPct: number;
+  expoOccupiedSlots: number;
+  expoTotalSlots: number;
+  expoOccupancyPct: number;
+  diledOccupiedSlots: number;
+  diledTotalSlots: number;
+  diledOccupancyPct: number;
+  floorOccupancyPct: number;
+  floorUnitsCount: number;
+  floorAreaCount: number;
   activeOrders: number;
 }
 
@@ -1540,6 +1949,7 @@ export function getDashboardSummary(state: AppState): DashboardSummary {
           "Atkeliauja",
         carrier: s.carrier || "—",
         expectedAt: s.expectedAt,
+        hasAttachment: !!(s.attachmentUrl || s.attachmentStoragePath || s.attachmentDataUrl),
       };
     });
 
@@ -1548,6 +1958,30 @@ export function getDashboardSummary(state: AppState): DashboardSummary {
   const occupiedSlots = palletSlots.filter(
     (l) => occ.get(l.code) || occ.get(l.id),
   ).length;
+
+  const expoSlots = palletSlots.filter(
+    (l) => l.zone === "EXPO" || l.zone === "LONG",
+  );
+  const expoOccupied = expoSlots.filter(
+    (l) => occ.get(l.code) || occ.get(l.id),
+  ).length;
+
+  const diledSlots = palletSlots.filter((l) => l.zone === "DILED");
+  const diledOccupied = diledSlots.filter(
+    (l) => occ.get(l.code) || occ.get(l.id),
+  ).length;
+
+  const totalFloorArea = state.floorAreas.reduce((s, f) => s + f.w * f.d, 0);
+  const occupiedFloorArea = state.floorAreas
+    .filter((f) =>
+      state.units.some(
+        (u) =>
+          u.floorAreaId === f.id &&
+          !["issued", "archived"].includes(u.status),
+      ),
+    )
+    .reduce((s, f) => s + f.w * f.d, 0);
+  const floorUnitsCount = activeUnits.filter((u) => u.floorAreaId).length;
 
   return {
     pickups,
@@ -1561,6 +1995,24 @@ export function getDashboardSummary(state: AppState): DashboardSummary {
       palletSlots.length > 0
         ? Math.round((occupiedSlots / palletSlots.length) * 100)
         : 0,
+    expoOccupiedSlots: expoOccupied,
+    expoTotalSlots: expoSlots.length,
+    expoOccupancyPct:
+      expoSlots.length > 0
+        ? Math.round((expoOccupied / expoSlots.length) * 100)
+        : 0,
+    diledOccupiedSlots: diledOccupied,
+    diledTotalSlots: diledSlots.length,
+    diledOccupancyPct:
+      diledSlots.length > 0
+        ? Math.round((diledOccupied / diledSlots.length) * 100)
+        : 0,
+    floorOccupancyPct:
+      totalFloorArea > 0
+        ? Math.round((occupiedFloorArea / totalFloorArea) * 100)
+        : 0,
+    floorUnitsCount,
+    floorAreaCount: state.floorAreas.length,
     activeOrders: state.orders.filter((o) => o.status === "active").length,
   };
 }

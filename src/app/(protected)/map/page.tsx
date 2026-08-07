@@ -22,6 +22,14 @@ import {
   type ShelfDraft,
 } from "@/components/ShelfFootprintModal";
 import type { PlacementSuggestion } from "@/lib/placement";
+import {
+  loadState,
+  moveUnitToLocation,
+  slotOccupancy,
+  unitsAtLocation,
+} from "@/lib/demo-store";
+import { BAY_DEPTH_M, locationCode } from "@/lib/locations";
+import { formatLocationHuman } from "@/lib/ui-labels";
 
 const Warehouse3D = dynamic(
   () => import("@/components/Warehouse3D").then((m) => m.Warehouse3D),
@@ -40,7 +48,7 @@ const VIEW_BTNS: { id: ViewPreset; label: string; short: string }[] = [
   { id: "entrance", label: "Įėjimas", short: "Įėj." },
   { id: "exit", label: "Išėjimas", short: "Išėj." },
   { id: "top", label: "Viršus", short: "Virš." },
-  { id: "expo", label: "Ekspozicija", short: "Eksp." },
+  { id: "expo", label: "ExpoDesign", short: "Expo" },
   { id: "diled", label: "Diled", short: "Diled" },
   { id: "tunnel1516", label: "15↔16", short: "15↔16" },
   { id: "tunnel1617", label: "16↔17", short: "16↔17" },
@@ -77,6 +85,9 @@ function MapInner() {
   const pendingFocusRef = useRef<PendingMapFocus | null>(null);
   const focusAppliedRef = useRef(false);
   const focusRetryTimerRef = useRef<number | null>(null);
+  const moveInitRef = useRef<string | null>(null);
+  const [moveUnitId, setMoveUnitId] = useState<string | null>(null);
+  const [moveFeedback, setMoveFeedback] = useState<string | null>(null);
 
   function clearMapFocus() {
     if (focusRetryTimerRef.current) {
@@ -85,7 +96,20 @@ function MapInner() {
     }
     setHintText(null);
     setFocusHighlight(false);
+    setMoveUnitId(null);
+    moveInitRef.current = null;
+    setMoveFeedback(null);
     canvasRef.current?.clearFocus();
+  }
+
+  function finishMove(successMsg: string) {
+    setMoveUnitId(null);
+    moveInitRef.current = null;
+    setMoveFeedback(null);
+    setFocusHighlight(false);
+    canvasRef.current?.clearFocus();
+    setHintText(successMsg);
+    window.setTimeout(() => setHintText(null), 4000);
   }
 
   function scheduleFocus(
@@ -122,7 +146,9 @@ function MapInner() {
     }
     setHintText(
       reason ||
-        (code ? `Vieta: ${code}` : `Stelažas ${rack}`),
+        (code
+          ? `Vieta: ${formatLocationHuman(code)}`
+          : `Stelažas ${rack}`),
     );
     setFocusHighlight(true);
     scheduleFocus(rack, code, unitId);
@@ -251,6 +277,27 @@ function MapInner() {
   }, [params, router]);
 
   useEffect(() => {
+    const move = params.get("move");
+    if (!move) {
+      moveInitRef.current = null;
+      return;
+    }
+    if (moveInitRef.current === move) return;
+    moveInitRef.current = move;
+    setMoveUnitId(move);
+    setMoveFeedback(null);
+    focusAppliedRef.current = true;
+    pendingFocusRef.current = null;
+    const label = params.get("label");
+    const unit = state.units.find((u) => u.id === move);
+    const name = label
+      ? decodeURIComponent(label)
+      : unit?.labelTitle ?? "prekę";
+    setHintText(`Perkeli: ${name}`);
+    router.replace("/map", { scroll: false });
+  }, [params, router, state.units]);
+
+  useEffect(() => {
     applyPendingFocus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, params]);
@@ -295,6 +342,100 @@ function MapInner() {
     applyPlacementHint(s.rack, s.code, s.reason);
   }
 
+  function handlePick(p: PickInfo) {
+    if (!moveUnitId) {
+      setPick(p);
+      return;
+    }
+
+    const movingUnit = state.units.find((u) => u.id === moveUnitId);
+    if (!movingUnit) return;
+
+    if (p.kind === "floor") {
+      if (p.code === movingUnit.floorAreaId) {
+        setMoveFeedback("Tai ta pati vieta — pasirink kitą");
+        return;
+      }
+      moveUnitToLocation(loadState(), moveUnitId, { floorAreaId: p.code });
+      finishMove("Perkelta ant grindų");
+      return;
+    }
+
+    const loc = state.locations.find(
+      (l) => l.code === p.code || l.id === p.code,
+    );
+    if (!loc) {
+      setMoveFeedback("Pasirink stelažą ar plotą ant grindų");
+      return;
+    }
+
+    if (loc.id === movingUnit.locationId) {
+      setMoveFeedback("Tai dabartinė vieta — spausk kitą (žalia = laisva)");
+      return;
+    }
+
+    const occ = slotOccupancy(state);
+    if (occ.get(loc.code) || occ.get(loc.id)) {
+      setMoveFeedback("Užimta — pasirink laisvą vietą (žalia spalva)");
+      return;
+    }
+
+    moveUnitToLocation(loadState(), moveUnitId, { locationId: loc.id });
+    finishMove(`Perkelta: ${formatLocationHuman(loc.code, loc.label)}`);
+  }
+
+  function resolveShelfDraftCode(d: ShelfDraft): string | null {
+    return (
+      d.locationCode ??
+      (d.rack != null
+        ? locationCode(d.rack, d.offsetX < 0 ? "K" : "D", d.level)
+        : null)
+    );
+  }
+
+  function handleShelfDraftComplete(d: ShelfDraft) {
+    if (!moveUnitId) {
+      setShelfDraft(d);
+      return;
+    }
+
+    const movingUnit = state.units.find((u) => u.id === moveUnitId);
+    if (!movingUnit) return;
+
+    const code = resolveShelfDraftCode(d);
+    if (!code) {
+      setMoveFeedback("Nepavyko nustatyti vietos");
+      return;
+    }
+
+    const loc = state.locations.find((l) => l.id === code || l.code === code);
+    if (!loc) {
+      setMoveFeedback("Vieta nerasta");
+      return;
+    }
+
+    const blockers = unitsAtLocation(state, loc.id).filter(
+      (u) =>
+        u.id !== moveUnitId && !["issued", "archived"].includes(u.status),
+    );
+    if (blockers.length > 0) {
+      setMoveFeedback("Čia jau stovi kita prekė — pabrėžk tik laisvą plotą");
+      return;
+    }
+
+    let footprintD = Math.max(0.3, Math.min(BAY_DEPTH_M, d.d));
+    if (footprintD >= BAY_DEPTH_M * 0.88) footprintD = BAY_DEPTH_M;
+
+    moveUnitToLocation(loadState(), moveUnitId, {
+      locationId: loc.id,
+      footprintW: Math.max(0.3, Math.min(4, d.w)),
+      footprintD,
+      footprintOffsetX: d.offsetX,
+      footprintOffsetZ: d.offsetZ,
+    });
+    finishMove(`Perkelta: ${formatLocationHuman(loc.code, loc.label)}`);
+  }
+
   return (
     <div className="-mx-3 -mb-[calc(4.75rem+env(safe-area-inset-bottom))] flex h-[calc(100dvh-3rem-4.75rem-env(safe-area-inset-bottom))] flex-col gap-1 overflow-hidden sm:mx-0 lg:mb-0 lg:h-[calc(100dvh-3.5rem)] md:gap-2 md:py-2">
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 sm:gap-2 md:px-0">
@@ -305,16 +446,16 @@ function MapInner() {
           <p className="truncate text-[10px] text-stone-500 sm:text-xs">
             <span className="sm:hidden">Spausk stelažą · žalia = laisva</span>
             <span className="hidden sm:inline">
-              Tempk ant sijos = plotas · Spausk = info · Žalia = laisva
+              Spausk vietą — pamatysi kas stovi. Tempk ant sijos — pažymėsi plotą.
             </span>
           </p>
         </div>
         <p className="w-full text-[10px] text-stone-500 sm:hidden">
-          Spausk skaičių ant stelažo · 1 pirštu sukti · 2 priartinti
+          Spausk stelažą · 1 pirštu sukti · 2 priartinti
         </p>
         <span className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-stone-600 ring-1 ring-stone-200 sm:px-2.5 sm:text-xs">
-          {stats.orders} užs. · {stats.active} u.
-          {stats.floors > 0 ? ` · ${stats.floors} pl.` : ""}
+          {stats.orders} užsakymai · {stats.active} prekės
+          {stats.floors > 0 ? ` · ${stats.floors} ant grindų` : ""}
         </span>
         <button
           type="button"
@@ -330,30 +471,55 @@ function MapInner() {
           className="btn-secondary min-h-10 !px-3 !py-2 !text-xs sm:!py-1.5"
           onClick={() => canvasRef.current?.enterFullscreen()}
         >
-          <span className="sm:hidden">Ekranas</span>
+          <span className="sm:hidden">Pilnas ekranas</span>
           <span className="hidden sm:inline">Per visą ekraną</span>
         </button>
       </div>
 
       {markFloor && (
-        <div className="mx-3 shrink-0 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 sm:mx-0">
-          Tempk stačiakampį ant grindų — bus plotas prekėms. Kameros sukimas
-          išjungtas kol žymi.
+        <div className="mx-3 shrink-0 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950 sm:mx-0">
+          Nubrėžk stačiakampį ant grindų — ten galėsi padėti prekes. Kol žymi,
+          kamera nesisuka.
         </div>
       )}
 
-      {hintText && (
-        <div className="mx-3 flex shrink-0 items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950 sm:mx-0">
-          <p className="min-w-0">
-            <span className="font-semibold">Rodoma: </span>
-            {hintText}
+      {moveUnitId && (
+        <div className="mx-3 shrink-0 rounded-xl border-2 border-yellow-400 bg-yellow-50 px-4 py-3 text-sm text-yellow-950 sm:mx-0">
+          <p className="font-semibold">{hintText}</p>
+          <p className="mt-1.5 leading-relaxed text-yellow-900">
+            <span className="font-medium">2 žingsnis:</span> spausk žalią
+            laisvą vietą <span className="font-semibold">arba nubrėžk plotą</span>{" "}
+            ant stelažo (tempk pele / pirštu). Ne ten, kur stovi dabar.
+          </p>
+          {moveFeedback && (
+            <p className="mt-2 rounded-lg bg-white/80 px-2.5 py-1.5 text-sm font-medium text-amber-900">
+              {moveFeedback}
+            </p>
+          )}
+          <button
+            type="button"
+            className="btn-secondary mt-3 !px-3 !py-2 !text-xs"
+            onClick={clearMapFocus}
+          >
+            Atšaukti perkėlimą
+          </button>
+        </div>
+      )}
+
+      {hintText && !moveUnitId && (
+        <div className="mx-3 flex shrink-0 items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-950 sm:mx-0">
+          <p className="min-w-0 leading-snug">
+            <>
+              <span className="font-semibold">Rodoma: </span>
+              {hintText}
+            </>
           </p>
           <button
             type="button"
             className="btn-secondary shrink-0 !px-3 !py-2 !text-xs"
             onClick={clearMapFocus}
           >
-            Nustoti rodyti
+            Uždaryti
           </button>
         </div>
       )}
@@ -365,7 +531,7 @@ function MapInner() {
             className="btn-secondary !px-3 !py-2 !text-xs"
             onClick={clearMapFocus}
           >
-            Nustoti rodyti
+            Uždaryti
           </button>
         </div>
       )}
@@ -391,7 +557,7 @@ function MapInner() {
             href="/vizualizacija"
             className="ml-auto shrink-0 px-2 py-2 text-xs font-medium text-stone-500 underline underline-offset-2 hover:text-stone-800"
           >
-            2D
+            2D planas
           </Link>
         </div>
 
@@ -401,13 +567,14 @@ function MapInner() {
             state={state}
             preset={preset}
             markFloorMode={markFloor}
+            moveMode={!!moveUnitId}
             onHighlightChange={setFocusHighlight}
-            onPick={setPick}
+            onPick={handlePick}
             onFloorDraftComplete={(d) => {
               setMarkFloor(false);
               setFloorDraft(d);
             }}
-            onShelfDraftComplete={(d) => setShelfDraft(d)}
+            onShelfDraftComplete={handleShelfDraftComplete}
           />
         </div>
 
@@ -452,6 +619,12 @@ function MapInner() {
         onClose={() => setPick(null)}
         onCreateOrder={(p) => openCreateAt(p, false)}
         onLegacyOrder={(p) => openCreateAt(p, true)}
+        onMoveUnit={(unitId) => {
+          const unit = state.units.find((u) => u.id === unitId);
+          router.push(
+            `/map?move=${unitId}&hint=1&label=${encodeURIComponent(unit?.labelTitle ?? "prekė")}`,
+          );
+        }}
       />
       <FloorAreaModal
         draft={floorDraft}

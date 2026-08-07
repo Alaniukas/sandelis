@@ -13,16 +13,28 @@ declare
   z zone_type;
   code text;
   rack_size text;
+  skip_level3 boolean;
 begin
   for r in 1..18 loop
     if r <= 12 then z := 'EXPO'; else z := 'DILED'; end if;
     if r in (5,6,7,8,13,18) then rack_size := 'blue_1.9'; else rack_size := 'red_2.9'; end if;
+    skip_level3 := r in (1, 9, 10);
     foreach s in array array['K','D'] loop
       for lv in 1..3 loop
-        if lv = 3 and r in (12, 13) then
-          code := 'LONG-' || r::text || '-' || s || '-' || lv::text;
+        if skip_level3 and lv = 3 then
+          continue;
+        end if;
+        if r = 13 and lv = 3 then
+          continue;
+        end if;
+        if r = 14 and lv = 2 then
+          code := z::text || '-' || r::text || '-' || s || '-M';
           insert into locations (code, zone, rack, side, level, kind, label, capacity_hint)
-          values (code, 'LONG', r, s::side_type, lv, 'pallet', code || ' (virš EXIT)', 
+          values (code, z, r, s::side_type, null, 'pallet', code || ' (mini fanera)',
+            case when rack_size = 'red_2.9' then 2.9*1.5*1.9 else 1.9*1.5*1.8 end);
+          code := z::text || '-' || r::text || '-' || s || '-' || lv::text;
+          insert into locations (code, zone, rack, side, level, kind, label, capacity_hint)
+          values (code, z, r, s::side_type, lv, 'pallet', code || ' (' || rack_size || ')',
             case when rack_size = 'red_2.9' then 2.9*1.5*1.9 else 1.9*1.5*1.8 end);
         else
           code := z::text || '-' || r::text || '-' || s || '-' || lv::text;

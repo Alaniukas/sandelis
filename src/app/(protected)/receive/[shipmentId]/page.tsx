@@ -1,10 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { loadState, receiveShipment } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
-import Link from "next/link";
 
 export default function ReceivePage() {
   const { shipmentId } = useParams<{ shipmentId: string }>();
@@ -20,7 +20,14 @@ export default function ReceivePage() {
   const [defectPhoto, setPhoto] = useState<string | null>(null);
 
   if (!shipment) {
-    return <p>Atvykimas nerastas</p>;
+    return (
+      <div className="mx-auto max-w-lg space-y-2 py-6">
+        <p>Atvykimas nerastas.</p>
+        <Link href="/orders" className="text-sm underline">
+          ← Užsakymai
+        </Link>
+      </div>
+    );
   }
 
   async function onPhoto(file: File | null) {
@@ -39,74 +46,109 @@ export default function ReceivePage() {
       defectPhoto,
     });
     if (order) router.push(`/orders/${order.id}`);
+    else router.push("/");
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-4">
-      <Link href={order ? `/orders/${order.id}` : "/orders"} className="text-sm underline">
-        ← Atgal
-      </Link>
-      <h1 className="font-display text-3xl font-semibold">Priėmimas</h1>
-      <p className="text-sm text-stone-600">
-        {order?.project} · {order?.orderCode}
-      </p>
+    <div className="mx-auto max-w-lg space-y-5 py-4 sm:py-6">
+      <div>
+        <Link
+          href={order ? `/orders/${order.id}` : "/orders"}
+          className="text-sm text-stone-500 underline decoration-stone-300 underline-offset-2"
+        >
+          ← Atgal
+        </Link>
+        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+          Atvykimas
+        </p>
+        <h1 className="font-display mt-1 text-3xl font-semibold text-stone-900">
+          Priėmimas
+        </h1>
+        <p className="mt-1 text-sm text-stone-600">
+          {[order?.project, order?.orderCode].filter(Boolean).join(" · ") ||
+            "Prekės atvažiavo"}
+        </p>
+      </div>
 
-      <div className="space-y-3 rounded-xl border bg-white p-4">
+      <div className="card-panel space-y-4">
+        <p className="text-sm text-stone-500">
+          Suskaičiuok ką gavai. Po to galėsi padėti sandėlyje.
+        </p>
+
         <label className="block text-sm">
-          Palečių sk.
+          <span className="mb-1 block font-medium text-stone-700">
+            Palečių skaičius
+          </span>
           <input
             type="number"
-            className="mt-1 w-full rounded border px-2 py-1.5"
+            className="field"
+            min={0}
             value={palletCount}
             onChange={(e) => setPalletCount(Number(e.target.value))}
           />
         </label>
         <label className="block text-sm">
-          Dėžių sk.
+          <span className="mb-1 block font-medium text-stone-700">
+            Dėžių skaičius
+          </span>
           <input
             type="number"
-            className="mt-1 w-full rounded border px-2 py-1.5"
+            className="field"
+            min={0}
             value={boxCount}
             onChange={(e) => setBoxCount(Number(e.target.value))}
           />
         </label>
         <label className="block text-sm">
-          Papildomos dėžės (daugiau nei tikėtasi)
+          <span className="mb-1 block font-medium text-stone-700">
+            Papildomos dėžės
+          </span>
           <input
             type="number"
-            className="mt-1 w-full rounded border px-2 py-1.5"
+            className="field"
+            min={0}
             value={extraBoxes}
             onChange={(e) => setExtraBoxes(Number(e.target.value))}
           />
+          <span className="mt-1 block text-xs text-stone-500">
+            Jei atvažiavo daugiau, nei tikėjaisi
+          </span>
         </label>
         <label className="block text-sm">
-          Brokas (aprašymas)
+          <span className="mb-1 block font-medium text-stone-700">
+            Brokas — aprašymas
+          </span>
           <textarea
-            className="mt-1 w-full rounded border px-2 py-1.5"
+            className="field min-h-[5rem]"
             rows={3}
+            placeholder="Kas pažeista, kiek…"
             value={defectDescription}
             onChange={(e) => setDefect(e.target.value)}
           />
         </label>
         <label className="block text-sm">
-          Broko foto
+          <span className="mb-1 block font-medium text-stone-700">
+            Broko nuotrauka
+          </span>
           <input
             type="file"
             accept="image/*"
             capture="environment"
-            className="mt-1 block w-full text-sm"
+            className="field text-sm"
             onChange={(e) => onPhoto(e.target.files?.[0] ?? null)}
           />
         </label>
         {defectPhoto && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={defectPhoto} alt="Brokas" className="max-h-40 rounded border" />
+          <img
+            src={defectPhoto}
+            alt="Brokas"
+            className="max-h-40 rounded-xl border border-stone-200"
+          />
         )}
-        <button
-          onClick={submit}
-          className="w-full rounded-lg bg-stone-900 py-2.5 text-sm font-medium text-white"
-        >
-          Pažymėti atvyko
+
+        <button type="button" onClick={submit} className="btn-primary w-full">
+          Pažymėti: atvyko
         </button>
       </div>
     </div>

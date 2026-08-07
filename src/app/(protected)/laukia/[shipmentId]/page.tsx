@@ -2,18 +2,31 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { shipmentAttachmentHref } from "@/lib/attachments";
 import {
   deleteExpectedArrival,
   loadState,
   markExpectedArrivalReceived,
+  normalizeState,
 } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
+import { pullWmsState } from "@/lib/wms-sync";
 
 export default function IncomingPage() {
   const { shipmentId } = useParams<{ shipmentId: string }>();
   const router = useRouter();
   const state = useWms();
+
+  useEffect(() => {
+    void (async () => {
+      const result = await pullWmsState();
+      if (!result?.payload) return;
+      const next = normalizeState(result.payload);
+      localStorage.setItem("sandelio-wms-v1", JSON.stringify(next));
+      window.dispatchEvent(new Event("wms-updated"));
+    })();
+  }, [shipmentId]);
   const shipment = state.shipments.find((s) => s.id === shipmentId);
 
   if (!shipment) {
@@ -72,7 +85,8 @@ export default function IncomingPage() {
           rel="noopener noreferrer"
           className="btn-secondary inline-flex"
         >
-          Atidaryti priedą ({shipment.documentName || "dokumentas"})
+          Atidaryti dokumentą
+          {shipment.documentName ? ` (${shipment.documentName})` : ""}
         </a>
       )}
 
@@ -84,7 +98,7 @@ export default function IncomingPage() {
             router.push(`/map?new=1&fromIncoming=${shipmentId}`)
           }
         >
-          Atvyko — registruoti sandėlyje
+          Atvyko — padėti sandėlyje
         </button>
         <button
           type="button"
@@ -100,11 +114,11 @@ export default function IncomingPage() {
             }
           }}
         >
-          Atvyko — be vietos
+          Atvyko — vėliau padėsiu
         </button>
         <button
           type="button"
-          className="btn-secondary w-full text-red-800 sm:w-auto"
+          className="btn-danger w-full sm:w-auto"
           onClick={() => {
             if (window.confirm("Pašalinti šį įrašą iš laukiamų atvykimų?")) {
               deleteExpectedArrival(loadState(), shipmentId);
@@ -115,13 +129,12 @@ export default function IncomingPage() {
           Pašalinti
         </button>
         <Link href="/map?legacy=1" className="btn-secondary w-full sm:w-auto">
-          Tik žymėti vietą (senas užsakymas)
+          Tik žymėti vietą
         </Link>
       </div>
 
-      <p className="text-xs text-stone-500">
-        Fiziškai vis tiek gali klijuoti lapą prie lentos — čia tas pats, tik
-        skaitmeninė kopija.
+      <p className="text-sm text-stone-500">
+        Čia ta pati informacija, kurią anksčiau rašydavai ant lapo prie lentos.
       </p>
     </div>
   );

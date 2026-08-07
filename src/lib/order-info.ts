@@ -102,8 +102,8 @@ export function collectOrderDetailBlocks(
 
   for (const s of shipments) {
     const docLabel = s.documentName
-      ? `Siuntos pastabos (${s.documentName})`
-      : "Siuntos pastabos";
+      ? `Dokumento pastabos (${s.documentName})`
+      : "Dokumento pastabos";
     pushBlock(blocks, seen, seenBodies, docLabel, s.notes);
 
     const parsed = s.parsedJson;
@@ -113,7 +113,7 @@ export function collectOrderDetailBlocks(
           blocks,
           seen,
           seenBodies,
-          "Gamintojas / šaltinis",
+          "Gamintojas",
           sourceLabel(parsed.source),
         );
       }
@@ -126,7 +126,7 @@ export function collectOrderDetailBlocks(
           parsedNotesNorm.includes(orderNotesNorm) ||
           orderNotesNorm.includes(parsedNotesNorm));
       if (!isDupNotes) {
-        pushBlock(blocks, seen, seenBodies, "Iš dokumento (pastabos)", parsed.notes);
+        pushBlock(blocks, seen, seenBodies, "Iš dokumento", parsed.notes);
       }
 
       pushCustomFields(blocks, seen, seenBodies, parsed.customFields);

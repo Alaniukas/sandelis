@@ -3,9 +3,49 @@
 import type { AppState } from "./types";
 
 const SYNC_DEBOUNCE_MS = 400;
+const SYNC_META_KEY = "sandelio-wms-sync-meta";
 
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let pulling = false;
+
+type SyncMeta = { pending: boolean; lastSyncedAt: string | null };
+
+function readSyncMeta(): SyncMeta {
+  if (typeof window === "undefined") {
+    return { pending: false, lastSyncedAt: null };
+  }
+  try {
+    const raw = localStorage.getItem(SYNC_META_KEY);
+    if (!raw) return { pending: false, lastSyncedAt: null };
+    return JSON.parse(raw) as SyncMeta;
+  } catch {
+    return { pending: false, lastSyncedAt: null };
+  }
+}
+
+function writeSyncMeta(meta: SyncMeta) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(SYNC_META_KEY, JSON.stringify(meta));
+}
+
+/** Žymi, kad lokali būsena naujesnė už paskutinį sėkmingą serverio pull. */
+export function markLocalDirty() {
+  const meta = readSyncMeta();
+  writeSyncMeta({ ...meta, pending: true });
+}
+
+export function markLocalSynced(updatedAt: string) {
+  writeSyncMeta({ pending: false, lastSyncedAt: updatedAt });
+}
+
+/** Ar saugu perrašyti localStorage senesniu serverio snapshot. */
+export function shouldApplyRemotePull(updatedAt: string | null): boolean {
+  if (!updatedAt) return false;
+  const meta = readSyncMeta();
+  if (meta.pending) return false;
+  if (!meta.lastSyncedAt) return true;
+  return new Date(updatedAt).getTime() > new Date(meta.lastSyncedAt).getTime();
+}
 
 function hasInventory(state: AppState): boolean {
   return (
@@ -67,10 +107,20 @@ async function pushWmsState(state: AppState) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ payload }),
     });
-    if (!res.ok) return;
-    await res.json();
+    if (!res.ok) {
+      const msg =
+        "Nepavyko išsaugoti į kitus įrenginius — patikrink internetą.";
+      console.warn("[wms-sync]", msg, res.status);
+      window.dispatchEvent(new CustomEvent("wms-sync-error", { detail: msg }));
+      return;
+    }
+    const data = (await res.json()) as { updatedAt?: string };
+    if (data.updatedAt) markLocalSynced(data.updatedAt);
   } catch {
-    /* offline — localStorage vis tiek veikia */
+    const msg =
+      "Nėra ryšio su serveriu — darbas tęsiasi šiame įrenginyje.";
+    console.warn("[wms-sync]", msg);
+    window.dispatchEvent(new CustomEvent("wms-sync-error", { detail: msg }));
   }
 }
 

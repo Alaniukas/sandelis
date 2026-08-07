@@ -27,19 +27,74 @@ export const BAY_DEPTH_M = 1.5;
 /** Industrial stelažų aukštų aukščiai (m): 1 = prie žemės, 2–3 = sijos */
 export const RACK_LEVEL_Y = [0.38, 1.08, 2.08] as const;
 
-export function rackLevelY(level: number): number {
+export type RackLevelKey = number | "M";
+
+export type RackLevelDef = {
+  key: RackLevelKey;
+  y: number;
+  tall?: boolean;
+  mini?: boolean;
+};
+
+const TWO_LEVEL_VERY_TALL = new Set([1]);
+const TWO_LEVEL_TALL = new Set([9, 10]);
+const TWO_LEVEL_ONLY = new Set([13]);
+
+/** Fiziniai aukštai pagal stelažą */
+export function rackLevelDefs(rack: number): RackLevelDef[] {
+  if (rack === 14) {
+    return [
+      { key: 1, y: 0.38 },
+      { key: "M", y: 0.68, mini: true },
+      { key: 2, y: 1.08, tall: true },
+      { key: 3, y: 2.08 },
+    ];
+  }
+  if (TWO_LEVEL_ONLY.has(rack)) {
+    return [
+      { key: 1, y: 0.38 },
+      { key: 2, y: 1.08 },
+    ];
+  }
+  if (TWO_LEVEL_VERY_TALL.has(rack)) {
+    return [
+      { key: 1, y: 0.38 },
+      { key: 2, y: 1.28, tall: true },
+    ];
+  }
+  if (TWO_LEVEL_TALL.has(rack)) {
+    return [
+      { key: 1, y: 0.38 },
+      { key: 2, y: 1.15, tall: true },
+    ];
+  }
+  return [
+    { key: 1, y: 0.38 },
+    { key: 2, y: 1.08 },
+    { key: 3, y: 2.08 },
+  ];
+}
+
+export function rackLevelY(rack: number, level: number): number {
+  const def = rackLevelDefs(rack).find(
+    (d) => d.key === level || (d.key === "M" && level === 0),
+  );
+  if (def) return def.y;
+  return RACK_LEVEL_Y[level - 1] ?? RACK_LEVEL_Y[0];
+}
+
+/** @deprecated — naudok rackLevelY(rack, level) */
+export function rackLevelYLegacy(level: number): number {
   return RACK_LEVEL_Y[level - 1] ?? RACK_LEVEL_Y[0];
 }
 
 export function locationCode(
   rack: number,
   side: "K" | "D",
-  level: number,
+  level: RackLevelKey,
 ): string {
   const zone = zoneForRack(rack);
-  if (level === 3 && (rack === 12 || rack === 13)) {
-    return `LONG-${rack}-${side}-${level}`;
-  }
+  if (level === "M") return `${zone}-${rack}-${side}-M`;
   return `${zone}-${rack}-${side}-${level}`;
 }
 
@@ -54,19 +109,29 @@ export function buildLocations(): Location[] {
   for (let rack = 1; rack <= 18; rack++) {
     const zone = zoneForRack(rack);
     const size = rackSize(rack);
+    const defs = rackLevelDefs(rack);
     for (const side of ["K", "D"] as const) {
-      for (let level = 1; level <= 3; level++) {
-        const code = locationCode(rack, side, level);
+      for (const def of defs) {
+        const code = locationCode(rack, side, def.key);
         const isLong = code.startsWith("LONG-");
+        const levelNum = def.key === "M" ? null : def.key;
+        const levelLabel =
+          def.key === "M"
+            ? "mini (fanera)"
+            : def.key === 1
+              ? "1 (prie žemės)"
+              : def.tall
+                ? `${def.key} (aukštas)`
+                : String(def.key);
         locs.push({
           id: id(code),
           code,
           zone: isLong ? "LONG" : zone,
           rack,
           side,
-          level,
+          level: levelNum,
           kind: "pallet",
-          label: `${isLong ? "LONG " : ""}${rack} ${side} aukštas ${level}${level === 1 ? " (prie žemės)" : ""}`,
+          label: `${isLong ? "LONG " : ""}${rack} ${side} aukštas ${levelLabel}`,
           rackSize: size,
         });
       }

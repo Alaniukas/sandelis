@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { issueOrder, loadState } from "@/lib/demo-store";
 import { formatOrderQty } from "@/lib/labels";
 import { useWms } from "@/lib/use-wms";
-import { formatLocationHuman } from "@/lib/ui-labels";
+import { formatLocationHuman, zoneLabel } from "@/lib/ui-labels";
 
 export default function OrderQrPage() {
   const { token } = useParams<{ token: string }>();
@@ -71,10 +71,10 @@ export default function OrderQrPage() {
   if (!order) {
     return (
       <div className="mx-auto max-w-md space-y-3 py-8">
-        <h1 className="text-xl font-semibold">Užsakymas nerastas</h1>
+        <h1 className="font-display text-xl font-semibold">Užsakymas nerastas</h1>
         <p className="text-sm text-stone-600">
-          QR kodas neatpažintas šiame įrenginyje. Kai duomenys bus Supabase —
-          veiks iš bet kur.
+          Šis QR kodas šiuo metu neatpažintas. Pabandyk kitame įrenginyje arba
+          atnaujink duomenis.
         </p>
         <Link href="/orders" className="text-sm font-medium underline">
           Į užsakymus
@@ -89,46 +89,52 @@ export default function OrderQrPage() {
         <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
           Užsakymas
         </p>
-        <h1 className="font-display mt-1 text-2xl font-semibold">
+        <h1 className="font-display mt-1 text-2xl font-semibold text-stone-900">
           {order.project || order.orderCode || "Be pavadinimo"}
         </h1>
         {order.orderCode && (
-          <p className="mt-1 font-mono text-sm text-stone-600">{order.orderCode}</p>
+          <p className="mt-1 text-sm text-stone-600">{order.orderCode}</p>
         )}
 
         <dl className="mt-4 space-y-3 text-sm">
           {order.client && (
             <div>
-              <dt className="text-stone-500">Klientas</dt>
-              <dd className="font-medium">{order.client}</dd>
+              <dt className="section-label">Klientas</dt>
+              <dd className="mt-0.5 font-medium text-stone-900">{order.client}</dd>
             </div>
           )}
           <div>
-            <dt className="text-stone-500">Kiekis</dt>
-            <dd className="font-semibold">{formatOrderQty(units)}</dd>
+            <dt className="section-label">Kiekis</dt>
+            <dd className="mt-0.5 font-semibold text-stone-900">
+              {formatOrderQty(units)}
+            </dd>
           </div>
           {locations.length > 0 && (
             <div>
-              <dt className="text-stone-500">Kur sandėlyje</dt>
-              <dd className="font-mono">{locations.join(" · ")}</dd>
+              <dt className="section-label">Kur sandėlyje</dt>
+              <dd className="mt-0.5 font-medium text-stone-900">
+                {locations.join(" · ")}
+              </dd>
             </div>
           )}
           {order.zone && (
             <div>
-              <dt className="text-stone-500">Zona</dt>
-              <dd>{order.zone}</dd>
+              <dt className="section-label">Zona</dt>
+              <dd className="mt-0.5">{zoneLabel(order.zone)}</dd>
             </div>
           )}
           {customFields.map((f) => (
             <div key={f.id}>
-              <dt className="text-stone-500">{f.label || "Papildoma"}</dt>
-              <dd>{f.value}</dd>
+              <dt className="section-label">{f.label || "Papildoma"}</dt>
+              <dd className="mt-0.5">{f.value}</dd>
             </div>
           ))}
           {order.notes && (
             <div>
-              <dt className="text-stone-500">Pastabos</dt>
-              <dd className="whitespace-pre-wrap text-stone-700">{order.notes}</dd>
+              <dt className="section-label">Pastabos</dt>
+              <dd className="mt-0.5 whitespace-pre-wrap text-stone-700">
+                {order.notes}
+              </dd>
             </div>
           )}
         </dl>
@@ -140,31 +146,31 @@ export default function OrderQrPage() {
             disabled={busy}
             onClick={handleIssue}
           >
-            {busy ? "Žymima…" : "Pažymėti išvykus"}
+            {busy ? "Žymima…" : "Pažymėti: pasiėmė"}
           </button>
         )}
         {done && (
           <p className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
-            Užsakymas pažymėtas išvykus. Vietos sandėlyje laisvos.
+            Išduota klientui. Vietos sandėlyje laisvos.
           </p>
         )}
         {order.status === "archived" && !done && (
           <p className="mt-4 rounded-xl bg-stone-100 px-4 py-3 text-sm text-stone-700">
-            Užsakymas jau archyvuotas / išvykęs.
+            Šis užsakymas jau išduotas.
           </p>
         )}
 
         <div className="mt-4 flex flex-wrap gap-3 text-sm">
           <Link
             href={`/orders/${order.id}`}
-            className="font-medium text-blue-800 underline"
+            className="font-medium text-stone-800 underline decoration-stone-300 underline-offset-2"
           >
             Atidaryti užsakymą
           </Link>
           {mapUnit && (
             <button
               type="button"
-              className="font-medium text-blue-800 underline"
+              className="font-medium text-stone-800 underline decoration-stone-300 underline-offset-2"
               onClick={() => {
                 const loc = mapUnit.locationId
                   ? state.locations.find((l) => l.id === mapUnit.locationId)

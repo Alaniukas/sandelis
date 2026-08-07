@@ -86,6 +86,8 @@ export interface Unit {
   locationId: string | null;
   /** Paskutinė vieta prieš perkėlimą į išvežimą */
   previousLocationId?: string | null;
+  /** Paskutinis grindų plotas prieš išvežimą / archyvą */
+  previousFloorAreaId?: string | null;
   /** Jei true — unitas užima visą stelažą (visus K/D × aukštus) */
   occupiesEntireRack: boolean;
   /** @deprecated — naudok footprint*; laikoma migracijai */
@@ -151,6 +153,12 @@ export interface Handover {
   recipientName: string;
   notes: string;
   unitIds: string[];
+  /** Vietos snapshot atstatymui iš archyvo */
+  unitPlacements?: {
+    unitId: string;
+    locationId: string | null;
+    floorAreaId: string | null;
+  }[];
   issuedAt: string;
 }
 

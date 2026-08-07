@@ -21,11 +21,11 @@ export const UNIT_KIND_LABELS: Record<UnitKind, string> = {
 };
 
 export const ZONE_LABELS: Record<Zone, string> = {
-  EXPO: "Ekspozicija",
+  EXPO: "ExpoDesign",
   DILED: "Diled",
   STAGING: "Išvežimas",
   BROKAS: "Brokas",
-  LONG: "Ilgas saugojimas",
+  LONG: "Ilgos prekės",
 };
 
 export function zoneLabel(zone: Zone | null | undefined): string {
@@ -45,16 +45,92 @@ export function unitStatusLabel(status: UnitStatus): string {
 }
 
 export function formatLocationHuman(
-  code: string | null,
+  code: string | null | undefined,
   label?: string | null,
 ): string {
   if (label) {
     if (label === "STAGING") return "Išvežimas";
     if (label === "BROKAS") return "Brokas";
-    return label;
+    // Prefer human label unless it's just the raw code
+    if (!code || label !== code) return label;
   }
   if (!code) return "Dar nepadėta";
+
+  const m = code.match(
+    /^(EXPO|DILED|LONG|STAGING|BROKAS)-(\d+|ENTRANCE|EXIT)?-?([KDMS])?-?([M0-9]+)?$/i,
+  );
+  if (m) {
+    const zone = m[1].toUpperCase();
+    const rack = m[2];
+    const side = m[3]?.toUpperCase();
+    const level = m[4];
+    const zoneName =
+      zone === "EXPO"
+        ? "ExpoDesign"
+        : zone === "DILED"
+          ? "Diled"
+          : zone === "LONG"
+            ? "Ilgos"
+            : zone === "STAGING"
+              ? "Išvežimas"
+              : zone === "BROKAS"
+                ? "Brokas"
+                : zone;
+    if (zone === "STAGING" || zone === "BROKAS") return zoneName;
+    const sideName =
+      side === "K" ? "kairė" : side === "D" ? "dešinė" : side === "M" ? "vidurys" : side || "";
+    const levelName =
+      level === "M" ? "mini lentyna" : level ? `${level} aukštas` : "";
+    const parts = [
+      rack && /^\d+$/.test(rack) ? `Stelažas ${rack}` : rack || null,
+      sideName || null,
+      levelName || null,
+    ].filter(Boolean);
+    if (parts.length) return `${parts.join(" · ")} (${zoneName})`;
+  }
+
+  if (code.includes("/")) {
+    return code
+      .replace(/^EXPO-/, "ExpoDesign ")
+      .replace(/^DILED-/, "Diled ")
+      .replace(/-/g, " · ");
+  }
+
   return code;
+}
+
+export function locationOptionLabel(loc: {
+  code: string;
+  label?: string | null;
+  rack?: number | null;
+  side?: string | null;
+  level?: number | null;
+  zone?: Zone | null;
+}): string {
+  if (loc.rack != null) {
+    const sideName =
+      loc.side === "K"
+        ? "kairė"
+        : loc.side === "D"
+          ? "dešinė"
+          : loc.side === "M"
+            ? "mini"
+            : loc.side || "";
+    const levelName =
+      loc.level == null && loc.code.endsWith("-M")
+        ? "mini lentyna"
+        : loc.level != null
+          ? `${loc.level} aukštas`
+          : "";
+    const parts = [
+      `Stelažas ${loc.rack}`,
+      sideName || null,
+      levelName || null,
+      zoneLabel(loc.zone),
+    ].filter(Boolean);
+    return parts.join(" · ");
+  }
+  return formatLocationHuman(loc.code, loc.label);
 }
 
 /** Trumpa etiketė 3D žemėlapyje / sąrašuose */

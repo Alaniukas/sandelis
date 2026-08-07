@@ -7,6 +7,7 @@ import { searchOrders, getFormSuggestions } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
 import { SuggestField } from "@/components/ui/FormFields";
 import { HintLabel } from "@/components/ui/HintLabel";
+import { zoneLabel } from "@/lib/ui-labels";
 
 export default function OrdersPage() {
   const state = useWms();
@@ -19,12 +20,12 @@ export default function OrdersPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-            Visi užsakymai
+            Projektai ir klientai
           </p>
           <HintLabel
             block
             label="Užsakymai"
-            hint="Užsakymų sąrašas — vienas projektas gali turėti kelias dėžes. Konkrečiai prekei ieškok per Paiešką."
+            hint="Čia — užsakymų sąrašas. Jei ieškai konkrečios dėžės ar vietos sandėlyje — eik į Paiešką."
             className="mt-1"
           />
         </div>
@@ -64,7 +65,8 @@ export default function OrdersPage() {
                       : "bg-stone-100 text-stone-600"
                 }`}
               >
-                {o.zone || "—"} · {o.status === "active" ? "Aktyvus" : "Archyvuotas"}
+                {zoneLabel(o.zone)} ·{" "}
+                {o.status === "active" ? "Aktyvus" : "Archyvuotas"}
               </span>
             }
           />
@@ -112,7 +114,7 @@ export default function OrdersPage() {
                           : "bg-sky-50 text-sky-800"
                       }`}
                     >
-                      {o.zone}
+                      {zoneLabel(o.zone)}
                     </span>
                   ) : (
                     "—"
