@@ -1,7 +1,7 @@
 "use client";
 
 import { v4 as uuid } from "uuid";
-import { buildLocations, BAY_DEPTH_M, locationCode, zoneForRack } from "./locations";
+import { buildLocations, BAY_DEPTH_M, locationCode, ROOM, zoneAtFloorPoint, zoneForRack } from "./locations";
 import type {
   AppState,
   Defect,
@@ -1680,6 +1680,59 @@ export function unitsAtLocation(state: AppState, codeOrId: string): Unit[] {
   });
 }
 
+export type FootprintRect = {
+  w: number;
+  d: number;
+  offsetX: number;
+  offsetZ: number;
+};
+
+export function unitFootprintRect(u: Unit): FootprintRect {
+  if (u.footprintW && u.footprintD) {
+    return {
+      w: u.footprintW,
+      d: u.footprintD,
+      offsetX: u.footprintOffsetX ?? 0,
+      offsetZ: u.footprintOffsetZ ?? 0,
+    };
+  }
+  if (u.slotSpan === "half") {
+    return {
+      w: 0.55,
+      d: BAY_DEPTH_M * 0.85,
+      offsetX: u.slotHalf === "R" ? 0.35 : -0.35,
+      offsetZ: 0,
+    };
+  }
+  return { w: 1.1, d: BAY_DEPTH_M, offsetX: 0, offsetZ: 0 };
+}
+
+function footprintsOverlap(a: FootprintRect, b: FootprintRect, gap = 0.08): boolean {
+  return (
+    Math.abs(a.offsetX - b.offsetX) < (a.w + b.w) / 2 - gap &&
+    Math.abs(a.offsetZ - b.offsetZ) < (a.d + b.d) / 2 - gap
+  );
+}
+
+/** Ar naujas footprint persidengtų su kitomis prekėmis tame pačiame aukšte. */
+export function footprintConflictsAtLocation(
+  state: AppState,
+  locationId: string,
+  candidate: FootprintRect,
+  ignoreUnitId?: string,
+): boolean {
+  const loc = state.locations.find((l) => l.id === locationId);
+  if (!loc) return true;
+  if (loc.rack != null && rackFullyOccupiedByUnit(state).get(loc.rack)) {
+    return true;
+  }
+  for (const u of unitsAtLocation(state, locationId)) {
+    if (u.id === ignoreUnitId) continue;
+    if (footprintsOverlap(candidate, unitFootprintRect(u))) return true;
+  }
+  return false;
+}
+
 /** Pašalina unitą iš vietos (atšaukia žymėjimą ant sijos / grindų). */
 export function removeUnitPlacement(
   state: AppState,
@@ -1904,9 +1957,32 @@ export interface DashboardSummary {
   diledTotalSlots: number;
   diledOccupancyPct: number;
   floorOccupancyPct: number;
+  floorExpoOccupancyPct: number;
+  floorDiledOccupancyPct: number;
   floorUnitsCount: number;
   floorAreaCount: number;
   activeOrders: number;
+}
+
+/** Prekės užimamas plotas ant grindų (m²) — pagal footprint arba vizualizacijos taisyklę. */
+function unitFloorOccupiedAreaM2(
+  unit: Unit,
+  floorArea: FloorArea,
+  siblings: Unit[],
+): number {
+  if (unit.footprintW && unit.footprintD) {
+    return unit.footprintW * unit.footprintD;
+  }
+  const n = siblings.length || 1;
+  if (n === 1) {
+    return floorArea.w * 0.9 * floorArea.d * 0.9;
+  }
+  const cols = Math.ceil(Math.sqrt(n));
+  const fillW = floorArea.w * 0.85 / cols;
+  const fillD = floorArea.d * 0.85 / Math.ceil(n / cols);
+  const bw = Math.max(0.35, fillW);
+  const bd = Math.max(0.35, fillD);
+  return bw * bd;
 }
 
 export function getDashboardSummary(state: AppState): DashboardSummary {
@@ -1971,17 +2047,24 @@ export function getDashboardSummary(state: AppState): DashboardSummary {
     (l) => occ.get(l.code) || occ.get(l.id),
   ).length;
 
-  const totalFloorArea = state.floorAreas.reduce((s, f) => s + f.w * f.d, 0);
-  const occupiedFloorArea = state.floorAreas
-    .filter((f) =>
-      state.units.some(
-        (u) =>
-          u.floorAreaId === f.id &&
-          !["issued", "archived"].includes(u.status),
-      ),
-    )
-    .reduce((s, f) => s + f.w * f.d, 0);
-  const floorUnitsCount = activeUnits.filter((u) => u.floorAreaId).length;
+  const warehouseFloorAreaM2 = ROOM.length * ROOM.width;
+  const floorUnits = activeUnits.filter((u) => u.floorAreaId);
+  let occupiedFloorAreaM2 = 0;
+  let floorExpoAreaM2 = 0;
+  let floorDiledAreaM2 = 0;
+  for (const u of floorUnits) {
+    const area = state.floorAreas.find((f) => f.id === u.floorAreaId);
+    if (!area) continue;
+    const siblings = floorUnits.filter((x) => x.floorAreaId === area.id);
+    const m2 = unitFloorOccupiedAreaM2(u, area, siblings);
+    occupiedFloorAreaM2 += m2;
+    if (zoneAtFloorPoint(area.x, area.z) === "DILED") {
+      floorDiledAreaM2 += m2;
+    } else {
+      floorExpoAreaM2 += m2;
+    }
+  }
+  const floorUnitsCount = floorUnits.length;
 
   return {
     pickups,
@@ -1998,18 +2081,26 @@ export function getDashboardSummary(state: AppState): DashboardSummary {
     expoOccupiedSlots: expoOccupied,
     expoTotalSlots: expoSlots.length,
     expoOccupancyPct:
-      expoSlots.length > 0
-        ? Math.round((expoOccupied / expoSlots.length) * 100)
+      palletSlots.length > 0
+        ? Math.round((expoOccupied / palletSlots.length) * 100)
         : 0,
     diledOccupiedSlots: diledOccupied,
     diledTotalSlots: diledSlots.length,
     diledOccupancyPct:
-      diledSlots.length > 0
-        ? Math.round((diledOccupied / diledSlots.length) * 100)
+      palletSlots.length > 0
+        ? Math.round((diledOccupied / palletSlots.length) * 100)
         : 0,
     floorOccupancyPct:
-      totalFloorArea > 0
-        ? Math.round((occupiedFloorArea / totalFloorArea) * 100)
+      warehouseFloorAreaM2 > 0
+        ? Math.round((occupiedFloorAreaM2 / warehouseFloorAreaM2) * 100)
+        : 0,
+    floorExpoOccupancyPct:
+      warehouseFloorAreaM2 > 0
+        ? Math.round((floorExpoAreaM2 / warehouseFloorAreaM2) * 100)
+        : 0,
+    floorDiledOccupancyPct:
+      warehouseFloorAreaM2 > 0
+        ? Math.round((floorDiledAreaM2 / warehouseFloorAreaM2) * 100)
         : 0,
     floorUnitsCount,
     floorAreaCount: state.floorAreas.length,

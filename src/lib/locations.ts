@@ -350,6 +350,23 @@ export function getRackLayout(): RackBox[] {
   return [...top.boxes, ...bottom.boxes];
 }
 
+/** Grindų taško zona pagal artimiausią stelažą */
+export function zoneAtFloorPoint(x: number, z: number): Zone {
+  const boxes = getRackLayout();
+  let nearest = boxes[0]!;
+  let best = Infinity;
+  for (const b of boxes) {
+    const dx = x - b.x;
+    const dz = z - b.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < best) {
+      best = d2;
+      nearest = b;
+    }
+  }
+  return zoneForRack(nearest.rack);
+}
+
 export function getDoorGaps(): DoorGap[] {
   const top = layoutWall(
     [7, 8, 9, 10, 11, 12, 13, 14, 15],

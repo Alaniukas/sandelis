@@ -73,7 +73,7 @@ export function DashboardCards() {
           </p>
           <ul className="mt-3 space-y-2 text-sm">
             <li className="flex items-baseline justify-between gap-3 border-t border-stone-100 pt-2">
-              <span className="text-stone-600">ExpoDesign</span>
+              <span className="text-stone-600">Distyle</span>
               <span className="font-semibold tabular-nums text-stone-900">
                 {summary.expoOccupancyPct}%
               </span>
@@ -84,15 +84,21 @@ export function DashboardCards() {
                 {summary.diledOccupancyPct}%
               </span>
             </li>
-            <li className="flex items-baseline justify-between gap-3">
-              <span className="text-stone-600">Ant grindų</span>
-              <span className="font-semibold tabular-nums text-stone-900">
-                {summary.floorUnitsCount > 0
-                  ? summary.floorAreaCount > 0
+            <li className="flex flex-col gap-1 border-t border-stone-100 pt-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-stone-600">Ant grindų</span>
+                <span className="font-semibold tabular-nums text-stone-900">
+                  {summary.floorUnitsCount > 0
                     ? `${summary.floorOccupancyPct}% · ${summary.floorUnitsCount} prekės`
-                    : `${summary.floorUnitsCount} prekės`
-                  : "tuščia"}
-              </span>
+                    : "tuščia"}
+                </span>
+              </div>
+              {summary.floorUnitsCount > 0 && (
+                <div className="flex justify-between gap-3 pl-2 text-xs text-stone-500">
+                  <span>Distyle {summary.floorExpoOccupancyPct}%</span>
+                  <span>Diled {summary.floorDiledOccupancyPct}%</span>
+                </div>
+              )}
             </li>
           </ul>
         </div>

@@ -23,10 +23,11 @@ import {
 } from "@/components/ShelfFootprintModal";
 import type { PlacementSuggestion } from "@/lib/placement";
 import {
+  footprintConflictsAtLocation,
   loadState,
   moveUnitToLocation,
-  slotOccupancy,
-  unitsAtLocation,
+  rackFullyOccupiedByUnit,
+  type FootprintRect,
 } from "@/lib/demo-store";
 import { BAY_DEPTH_M, locationCode } from "@/lib/locations";
 import { formatLocationHuman } from "@/lib/ui-labels";
@@ -374,14 +375,43 @@ function MapInner() {
       return;
     }
 
-    const occ = slotOccupancy(state);
-    if (occ.get(loc.code) || occ.get(loc.id)) {
-      setMoveFeedback("Užimta — pasirink laisvą vietą (žalia spalva)");
+    if (loc.rack != null && rackFullyOccupiedByUnit(state).get(loc.rack)) {
+      setMoveFeedback("Visas stelažas užimtas — pasirink kitą");
       return;
     }
 
-    moveUnitToLocation(loadState(), moveUnitId, { locationId: loc.id });
-    finishMove(`Perkelta: ${formatLocationHuman(loc.code, loc.label)}`);
+    const fw = movingUnit.footprintW ?? 1.1;
+    const fd = movingUnit.footprintD ?? BAY_DEPTH_M;
+    const candidates: FootprintRect[] = [
+      {
+        w: fw,
+        d: fd,
+        offsetX: movingUnit.footprintOffsetX ?? 0,
+        offsetZ: movingUnit.footprintOffsetZ ?? 0,
+      },
+      { w: fw, d: fd, offsetX: -0.35, offsetZ: 0 },
+      { w: fw, d: fd, offsetX: 0.35, offsetZ: 0 },
+      { w: fw, d: fd, offsetX: 0, offsetZ: 0 },
+    ];
+    const seen = new Set<string>();
+    for (const c of candidates) {
+      const key = `${c.offsetX}|${c.offsetZ}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!footprintConflictsAtLocation(state, loc.id, c, moveUnitId)) {
+        moveUnitToLocation(loadState(), moveUnitId, {
+          locationId: loc.id,
+          footprintW: c.w,
+          footprintD: c.d,
+          footprintOffsetX: c.offsetX,
+          footprintOffsetZ: c.offsetZ,
+        });
+        finishMove(`Perkelta: ${formatLocationHuman(loc.code, loc.label)}`);
+        return;
+      }
+    }
+
+    setMoveFeedback("Netelpa — pabrėžk laisvą plotą ant sijos");
   }
 
   function resolveShelfDraftCode(d: ShelfDraft): string | null {
@@ -414,21 +444,30 @@ function MapInner() {
       return;
     }
 
-    const blockers = unitsAtLocation(state, loc.id).filter(
-      (u) =>
-        u.id !== moveUnitId && !["issued", "archived"].includes(u.status),
-    );
-    if (blockers.length > 0) {
-      setMoveFeedback("Čia jau stovi kita prekė — pabrėžk tik laisvą plotą");
+    let footprintD = Math.max(0.3, Math.min(BAY_DEPTH_M, d.d));
+    if (footprintD >= BAY_DEPTH_M * 0.88) footprintD = BAY_DEPTH_M;
+    const footprintW = Math.max(0.3, Math.min(4, d.w));
+
+    if (
+      footprintConflictsAtLocation(
+        state,
+        loc.id,
+        {
+          w: footprintW,
+          d: footprintD,
+          offsetX: d.offsetX,
+          offsetZ: d.offsetZ,
+        },
+        moveUnitId,
+      )
+    ) {
+      setMoveFeedback("Čia netelpa — pabrėžk tik laisvą plotą");
       return;
     }
 
-    let footprintD = Math.max(0.3, Math.min(BAY_DEPTH_M, d.d));
-    if (footprintD >= BAY_DEPTH_M * 0.88) footprintD = BAY_DEPTH_M;
-
     moveUnitToLocation(loadState(), moveUnitId, {
       locationId: loc.id,
-      footprintW: Math.max(0.3, Math.min(4, d.w)),
+      footprintW,
       footprintD,
       footprintOffsetX: d.offsetX,
       footprintOffsetZ: d.offsetZ,
