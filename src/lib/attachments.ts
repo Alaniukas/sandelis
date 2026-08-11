@@ -95,6 +95,18 @@ export function shipmentAttachmentHref(shipment: Shipment): string | null {
   return shipment.attachmentDataUrl || null;
 }
 
+/** Laikymo nuotraukų peržiūros URL (proxy) */
+export function holdingPhotoHrefs(shipment: Shipment): string[] {
+  const urls = shipment.holdingPhotoUrls ?? [];
+  const paths = shipment.holdingPhotoStoragePaths ?? [];
+  const out: string[] = [];
+  for (let i = 0; i < urls.length; i++) {
+    const href = attachmentViewHref(paths[i] ?? null, urls[i]) ?? mediaViewHref(urls[i]);
+    if (href) out.push(href);
+  }
+  return out;
+}
+
 export function mediaViewHref(url: string): string {
   if (url.startsWith("data:")) return url;
   if (url.includes(BUCKET) || url.startsWith("http")) {

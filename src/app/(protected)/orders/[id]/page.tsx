@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { issueOrder, loadState, placeUnit, restoreOrderFromArchive } from "@/lib/demo-store";
+import { loadState, placeUnit, restoreOrderFromArchive } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
 import { formatOrderQty } from "@/lib/labels";
 import { unitNotesVisibleInOrderInfo } from "@/lib/order-info";
@@ -136,9 +136,7 @@ export default function OrderDetailPage() {
 
   function doIssue() {
     if (!order) return;
-    const name = prompt("Kas pasiėmė? (vardas ar įmonė)") || "Klientas";
-    issueOrder(loadState(), order.id, name, "");
-    setMsg("Išduota klientui — užsakymas archyvuotas");
+    router.push(`/pick/${order.id}`);
   }
 
   return (
@@ -209,7 +207,7 @@ export default function OrderDetailPage() {
         </div>
         {canIssue && (
           <button type="button" onClick={doIssue} className="btn-danger w-full sm:w-auto">
-            Klientas pasiėmė
+            Klientas pasiėmė…
           </button>
         )}
         {order.status === "archived" && (

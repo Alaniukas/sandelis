@@ -183,7 +183,7 @@ export function OrderEditSection({ orderId }: { orderId: string }) {
                 {notePhotoUrls.map((url, i) => (
                   <div key={url} className="relative">
                     <img
-                      src={url}
+                      src={mediaViewHref(url)}
                       alt=""
                       className="h-20 w-20 rounded-lg object-cover ring-1 ring-stone-200"
                     />
@@ -356,7 +356,7 @@ export function OrderEditSection({ orderId }: { orderId: string }) {
               className="block"
             >
               <img
-                src={url}
+                src={mediaViewHref(url)}
                 alt=""
                 className="h-16 w-16 rounded-lg object-cover ring-1 ring-stone-200"
               />

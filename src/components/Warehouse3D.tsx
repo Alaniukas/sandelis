@@ -114,7 +114,7 @@ const SHELF_MIN_DRAW_M = 0.35;
 
 const CX = ROOM.length / 2;
 const CZ = ROOM.width / 2;
-const WALL_H = 4.2;
+const WALL_H = 5.1;
 /** Beveik visas bay gylis (~1.5 m) ir plotis — galima žymėti iki krašto */
 const DECK_W_FRAC = 0.98;
 const DECK_D_FRAC = 1;
@@ -1043,15 +1043,11 @@ function IndustrialRack({
   const skipRef = useSkipRaycastWhen(markMode);
   const [lx, lz] = toLocal(box.x, box.z);
   const { w, d, rack, wall } = box;
-  const uprightH = 2.48;
+  const uprightH = 3.05;
   const levelDefs = rackLevelDefs(rack);
   const beamYs = levelDefs.map((d) => d.y);
-  const badgeY =
-    beamYs.length >= 3
-      ? (beamYs[1] + beamYs[2]) / 2
-      : beamYs.length >= 2
-        ? (beamYs[0] + beamYs[1]) / 2
-        : (beamYs[0] ?? 0.5);
+  // Numeris viršuje — kad nesislėptų už prekių / sijų
+  const badgeY = Math.max(uprightH - 0.28, (beamYs[beamYs.length - 1] ?? 1.2) + 0.45);
   const uw = 0.08;
   const badgeColor = highlighted
     ? "#f59e0b"
@@ -2009,7 +2005,7 @@ function CameraRig({
       } else if (k === "d" || k === "arrowright") {
         e.preventDefault();
         void c.truck(step, 0, true);
-      } else if (k === "q" || k === "pageup") {
+      } else if (k === "e" || k === "pageup") {
         e.preventDefault();
         const pos = new THREE.Vector3();
         const tgt = new THREE.Vector3();
@@ -2025,7 +2021,7 @@ function CameraRig({
           tgt.z,
           true,
         );
-      } else if (k === "e" || k === "pagedown") {
+      } else if (k === "q" || k === "pagedown") {
         e.preventDefault();
         const pos = new THREE.Vector3();
         const tgt = new THREE.Vector3();
@@ -2340,36 +2336,40 @@ function MobileWalkPad({
   onMove: (action: "forward" | "back" | "left" | "right" | "up" | "down") => void;
 }) {
   const btn =
-    "pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full bg-stone-900/75 text-lg font-bold text-white active:bg-stone-900";
+    "pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-stone-900/75 text-lg font-bold text-white active:bg-stone-900";
   const btnSm =
-    "pointer-events-auto flex h-9 w-11 items-center justify-center rounded-full bg-stone-900/60 text-sm font-bold text-white active:bg-stone-900";
+    "pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-stone-900/70 text-base font-bold text-white active:bg-stone-900";
   return (
-    <div className="pointer-events-none absolute bottom-16 left-3 z-20 flex items-end gap-3 sm:hidden">
-      <div className="flex flex-col gap-1">
-        <button type="button" className={btnSm} onClick={() => onMove("up")} aria-label="Aukštyn">
+    <>
+      {/* Kairė: kilti / leistis */}
+      <div className="pointer-events-none absolute bottom-20 left-3 z-20 flex flex-col gap-2 sm:hidden">
+        <button type="button" className={btnSm} onClick={() => onMove("up")} aria-label="Kilti">
           ▲
         </button>
-        <button type="button" className={btnSm} onClick={() => onMove("down")} aria-label="Žemyn">
+        <button type="button" className={btnSm} onClick={() => onMove("down")} aria-label="Leistis">
           ▼
         </button>
       </div>
-      <div className="grid grid-cols-3 gap-1">
-        <div />
-        <button type="button" className={btn} onClick={() => onMove("forward")} aria-label="Pirmyn">
-          ▲
-        </button>
-        <div />
-        <button type="button" className={btn} onClick={() => onMove("left")} aria-label="Kairėn">
-          ◀
-        </button>
-        <button type="button" className={btn} onClick={() => onMove("back")} aria-label="Atgal">
-          ▼
-        </button>
-        <button type="button" className={btn} onClick={() => onMove("right")} aria-label="Dešinėn">
-          ▶
-        </button>
+      {/* Dešinė: pirmyn / atgal / į šoną */}
+      <div className="pointer-events-none absolute bottom-20 right-3 z-20 sm:hidden">
+        <div className="grid grid-cols-3 gap-1.5">
+          <div />
+          <button type="button" className={btn} onClick={() => onMove("forward")} aria-label="Pirmyn">
+            ▲
+          </button>
+          <div />
+          <button type="button" className={btn} onClick={() => onMove("left")} aria-label="Kairėn">
+            ◀
+          </button>
+          <button type="button" className={btn} onClick={() => onMove("back")} aria-label="Atgal">
+            ▼
+          </button>
+          <button type="button" className={btn} onClick={() => onMove("right")} aria-label="Dešinėn">
+            ▶
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -2799,7 +2799,7 @@ export const Warehouse3D = forwardRef<
                   : "Tempk — paleisk mygtuką kai baigsi"
                 : isMobileViewport
                   ? "Spausk prekę = info · rodyklės judėjimui · kairėje ▲▼ aukštis"
-                  : "Judėjimas: W A S D · Q/E aukštis · Spausk stelažą = info · Tempk ant sijos = plotas"}
+                  : "Judėjimas: W A S D · E kilti · Q leistis · Spausk stelažą = info · Tempk ant sijos = plotas"}
           </span>
         </div>
       </div>

@@ -445,8 +445,10 @@ export function createOrderFromParsed(
   colli: number,
   documentName: string,
   place?: PlaceOpts,
+  extras?: { notePhotoUrls?: string[] },
 ): AppState {
   const now = new Date().toISOString();
+  const notePhotos = extras?.notePhotoUrls?.filter(Boolean) ?? [];
   const order: Order = {
     id: uuid(),
     orderCode: doc.orderCode || "",
@@ -454,6 +456,7 @@ export function createOrderFromParsed(
     client: doc.client || "",
     zone: doc.zone ?? null,
     notes: doc.notes || "",
+    notePhotoUrls: notePhotos.length ? notePhotos : undefined,
     blockStorage: /dubai/i.test(doc.project || "") || !!place?.occupiesEntireRack,
     status: "active",
     customFields: doc.customFields?.length ? doc.customFields : undefined,
@@ -603,6 +606,206 @@ export function deleteExpectedArrival(
   return next;
 }
 
+/** Ar siunta yra laikymo eilėje: atvyko, be užsakymo */
+export function isHoldingShipment(s: Shipment): boolean {
+  return s.status === "arrived" && !s.orderId;
+}
+
+/**
+ * Greitas „Atvyko — laikom“: skaičius + foto, be užsakymo / padėjimo.
+ * Jei pateiktas fromExpectedShipmentId — perkelia iš „Atkeliauja“.
+ */
+export function createHoldingArrival(
+  state: AppState,
+  data: {
+    title: string;
+    boxCount: number;
+    palletCount?: number | null;
+    notes?: string;
+    carrier?: string;
+    holdingPhotoUrls?: string[];
+    holdingPhotoStoragePaths?: string[];
+    fromExpectedShipmentId?: string | null;
+  },
+): AppState {
+  const now = new Date().toISOString();
+  const title = data.title.trim() || "Nežinomas atvykimas";
+  const photos = data.holdingPhotoUrls?.filter(Boolean) ?? [];
+  const paths = data.holdingPhotoStoragePaths?.filter(Boolean) ?? [];
+  const boxCount = Math.max(0, Math.floor(data.boxCount));
+  const palletCount =
+    data.palletCount != null && data.palletCount >= 0
+      ? Math.floor(data.palletCount)
+      : null;
+
+  if (data.fromExpectedShipmentId) {
+    const src = state.shipments.find((s) => s.id === data.fromExpectedShipmentId);
+    if (!src || src.status !== "expected" || src.orderId) return state;
+    const next = {
+      ...state,
+      shipments: state.shipments.map((s) =>
+        s.id === src.id
+          ? {
+              ...s,
+              status: "arrived" as const,
+              arrivedAt: now,
+              boxCount,
+              palletCount,
+              carrier: data.carrier?.trim() || s.carrier,
+              notes: [title, data.notes?.trim()].filter(Boolean).join("\n"),
+              holdingPhotoUrls: photos.length ? photos : s.holdingPhotoUrls,
+              holdingPhotoStoragePaths: paths.length
+                ? paths
+                : s.holdingPhotoStoragePaths,
+              parsedJson: {
+                source: s.parsedJson?.source || "holding",
+                orderCode: s.parsedJson?.orderCode || "",
+                project: title,
+                client: s.parsedJson?.client || "",
+                lines: s.parsedJson?.lines || [],
+                colliHint: boxCount || s.parsedJson?.colliHint || null,
+                notes: data.notes?.trim() || s.parsedJson?.notes || "",
+                confidence: 1,
+              },
+            }
+          : s,
+      ),
+    };
+    saveState(next);
+    return next;
+  }
+
+  const shipment: Shipment = {
+    id: uuid(),
+    orderId: null,
+    status: "arrived",
+    carrier: data.carrier?.trim() || "",
+    expectedAt: null,
+    arrivedAt: now,
+    palletCount,
+    boxCount,
+    notes: [title, data.notes?.trim()].filter(Boolean).join("\n"),
+    documentName: null,
+    parsedJson: {
+      source: "holding",
+      orderCode: "",
+      project: title,
+      client: "",
+      lines: [],
+      colliHint: boxCount || null,
+      notes: data.notes?.trim() || "",
+      confidence: 1,
+    },
+    holdingPhotoUrls: photos.length ? photos : undefined,
+    holdingPhotoStoragePaths: paths.length ? paths : undefined,
+    createdAt: now,
+  };
+  const next = {
+    ...state,
+    shipments: [shipment, ...state.shipments],
+  };
+  saveState(next);
+  return next;
+}
+
+/** Atnaujinti laikymo įrašą (skaičius / foto / pavadinimas) */
+export function updateHoldingArrival(
+  state: AppState,
+  shipmentId: string,
+  data: {
+    title?: string;
+    boxCount?: number;
+    palletCount?: number | null;
+    notes?: string;
+    carrier?: string;
+    holdingPhotoUrls?: string[];
+    holdingPhotoStoragePaths?: string[];
+  },
+): AppState {
+  const shipment = state.shipments.find((s) => s.id === shipmentId);
+  if (!shipment || !isHoldingShipment(shipment)) return state;
+  const title =
+    data.title?.trim() ||
+    shipment.parsedJson?.project ||
+    shipment.notes.split("\n")[0] ||
+    "Laikoma";
+  const next = {
+    ...state,
+    shipments: state.shipments.map((s) =>
+      s.id === shipmentId
+        ? {
+            ...s,
+            boxCount:
+              data.boxCount != null
+                ? Math.max(0, Math.floor(data.boxCount))
+                : s.boxCount,
+            palletCount:
+              data.palletCount !== undefined
+                ? data.palletCount != null && data.palletCount >= 0
+                  ? Math.floor(data.palletCount)
+                  : null
+                : s.palletCount,
+            carrier:
+              data.carrier !== undefined
+                ? data.carrier.trim()
+                : s.carrier,
+            notes: [
+              title,
+              data.notes !== undefined
+                ? data.notes.trim()
+                : s.notes.split("\n").slice(1).join("\n"),
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            holdingPhotoUrls:
+              data.holdingPhotoUrls !== undefined
+                ? data.holdingPhotoUrls
+                : s.holdingPhotoUrls,
+            holdingPhotoStoragePaths:
+              data.holdingPhotoStoragePaths !== undefined
+                ? data.holdingPhotoStoragePaths
+                : s.holdingPhotoStoragePaths,
+            parsedJson: {
+              source: s.parsedJson?.source || "holding",
+              orderCode: s.parsedJson?.orderCode || "",
+              project: title,
+              client: s.parsedJson?.client || "",
+              lines: s.parsedJson?.lines || [],
+              colliHint:
+                data.boxCount != null
+                  ? Math.max(0, Math.floor(data.boxCount))
+                  : s.parsedJson?.colliHint ?? s.boxCount,
+              notes:
+                data.notes !== undefined
+                  ? data.notes.trim()
+                  : s.parsedJson?.notes || "",
+              confidence: 1,
+            },
+          }
+        : s,
+    ),
+  };
+  saveState(next);
+  return next;
+}
+
+/** Pašalinti laikymo įrašą (atvyko, be užsakymo, be dėžių) */
+export function deleteHoldingArrival(
+  state: AppState,
+  shipmentId: string,
+): AppState {
+  const shipment = state.shipments.find((s) => s.id === shipmentId);
+  if (!shipment || !isHoldingShipment(shipment)) return state;
+  const hasUnits = state.units.some((u) => u.shipmentId === shipmentId);
+  if (hasUnits) return state;
+  const next = {
+    ...state,
+    shipments: state.shipments.filter((s) => s.id !== shipmentId),
+  };
+  saveState(next);
+  return next;
+}
+
 /** Pažymėti, kad atvyko, bet niekur nepriskirta (be pilnos registracijos) */
 export function markExpectedArrivalReceived(
   state: AppState,
@@ -618,6 +821,31 @@ export function markExpectedArrivalReceived(
         ? { ...s, status: "arrived" as const, arrivedAt: now }
         : s,
     ),
+  };
+  saveState(next);
+  return next;
+}
+
+/** Perkelti laikymo nuotraukas į užsakymo pastabų foto */
+export function copyHoldingPhotosToOrder(
+  state: AppState,
+  fromShipmentId: string,
+  orderId: string,
+): AppState {
+  const src = state.shipments.find((s) => s.id === fromShipmentId);
+  const photos = src?.holdingPhotoUrls?.filter(Boolean) ?? [];
+  if (!photos.length) return state;
+  const next = {
+    ...state,
+    orders: state.orders.map((o) => {
+      if (o.id !== orderId) return o;
+      const existing = o.notePhotoUrls ?? [];
+      const merged = [...existing];
+      for (const url of photos) {
+        if (!merged.includes(url)) merged.push(url);
+      }
+      return { ...o, notePhotoUrls: merged };
+    }),
   };
   saveState(next);
   return next;
@@ -1288,6 +1516,10 @@ export function issueOrder(
   orderId: string,
   recipientName: string,
   notes: string,
+  proof?: {
+    confirmedCount?: number | null;
+    photoUrls?: string[];
+  },
 ): AppState {
   const now = new Date().toISOString();
   const orderUnits = state.units.filter(
@@ -1310,6 +1542,11 @@ export function issueOrder(
     notes,
     unitIds,
     unitPlacements,
+    confirmedCount:
+      proof?.confirmedCount != null
+        ? Math.max(0, Math.floor(proof.confirmedCount))
+        : null,
+    photoUrls: proof?.photoUrls?.filter(Boolean),
     issuedAt: now,
   };
 
@@ -1941,9 +2178,20 @@ export interface DashboardArrival {
   hasAttachment: boolean;
 }
 
+export interface DashboardHolding {
+  shipmentId: string;
+  title: string;
+  boxCount: number | null;
+  palletCount: number | null;
+  arrivedAt: string | null;
+  photoCount: number;
+  carrier: string;
+}
+
 export interface DashboardSummary {
   pickups: DashboardPickup[];
   arrivals: DashboardArrival[];
+  holding: DashboardHolding[];
   totalUnits: number;
   boxes: number;
   pallets: number;
@@ -2029,6 +2277,26 @@ export function getDashboardSummary(state: AppState): DashboardSummary {
       };
     });
 
+  const holding: DashboardHolding[] = state.shipments
+    .filter((s) => isHoldingShipment(s))
+    .map((s) => ({
+      shipmentId: s.id,
+      title:
+        s.parsedJson?.project ||
+        s.notes.split("\n")[0] ||
+        "Laikoma",
+      boxCount: s.boxCount,
+      palletCount: s.palletCount,
+      arrivedAt: s.arrivedAt,
+      photoCount: s.holdingPhotoUrls?.length ?? 0,
+      carrier: s.carrier || "",
+    }))
+    .sort((a, b) => {
+      const ta = a.arrivedAt ? new Date(a.arrivedAt).getTime() : 0;
+      const tb = b.arrivedAt ? new Date(b.arrivedAt).getTime() : 0;
+      return tb - ta;
+    });
+
   const occ = slotOccupancy(state);
   const palletSlots = state.locations.filter((l) => l.kind === "pallet");
   const occupiedSlots = palletSlots.filter(
@@ -2069,6 +2337,7 @@ export function getDashboardSummary(state: AppState): DashboardSummary {
   return {
     pickups,
     arrivals,
+    holding,
     totalUnits: activeUnits.length,
     boxes: activeUnits.filter((u) => u.kind === "box").length,
     pallets: activeUnits.filter((u) => u.kind === "pallet").length,

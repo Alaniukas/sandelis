@@ -75,6 +75,13 @@ export interface Shipment {
   attachmentUrl?: string | null;
   /** Kelias Storage (signed URL generavimui) */
   attachmentStoragePath?: string | null;
+  /**
+   * Laikymo eilė: atvyko, bet dar nepriskirta užsakymui.
+   * Nuotraukos (URL iš saugyklos) — važtaraštis, lipdukai, bendras vaizdas.
+   */
+  holdingPhotoUrls?: string[];
+  /** Keliai Storage laikymo nuotraukoms */
+  holdingPhotoStoragePaths?: string[];
   customFields?: CustomField[];
   createdAt: string;
 }
@@ -159,6 +166,10 @@ export interface Handover {
     locationId: string | null;
     floorAreaId: string | null;
   }[];
+  /** Patvirtintas dėžių / vienetų skaičius išdavimo metu */
+  confirmedCount?: number | null;
+  /** Išdavimo įrodymo nuotraukos (URL) */
+  photoUrls?: string[];
   issuedAt: string;
 }
 

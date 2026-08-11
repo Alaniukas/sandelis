@@ -1,7 +1,7 @@
 # AGENT_BRIEF — Sandėlio WMS
 
 **Skaityk šį failą pirmiausia**, prieš bet kokį darbą šiame projekte.  
-Versija atnaujinta: 2026-07-21.
+Versija atnaujinta: 2026-08-11.
 
 Papildomas verslo kontekstas (Antano procesai, lipdukų pavyzdžiai): [`CONTEXT.md`](CONTEXT.md).
 
@@ -28,8 +28,8 @@ Papildomas verslo kontekstas (Antano procesai, lipdukų pavyzdžiai): [`CONTEXT.
 | UI | React 19, **Tailwind CSS 4**, `src/app/globals.css` |
 | 3D sandėlis | **React Three Fiber** + drei + three — `src/components/Warehouse3D.tsx` |
 | AI parsinimas | **Google Gemini** (`gemini-2.0-flash`) — PDF/screenshot → JSON |
-| DB (planuota) | **Supabase** — schema paruošta, bet **demo režime nenaudojama** |
-| Hosting (planuota) | **Vercel** |
+| DB | **Supabase** — schema + sync (`WmsProvider`, `wms-sync.ts`); demo vis dar remiasi `localStorage` |
+| Hosting | **Vercel** — produkcija: `https://sandelio.vercel.app` |
 | Lipdukai | CSV + HTML → **BarTender** (ne tiesioginė spausintuvo integracija) |
 | Demo duomenys | **`localStorage`** raktas `sandelio-wms-v1` — `src/lib/demo-store.ts` |
 
@@ -57,16 +57,18 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000   # QR nuorodoms
 | Kelias | Failas | Paskirtis |
 |--------|--------|-----------|
 | `/` | `src/app/page.tsx` | **Pradžia** — suvestinė (atvykimai, atsiėmimai, užimtumas) |
-| `/map` | `src/app/map/page.tsx` | **Sandėlis 3D** — pagrindinis žemėlapis, žymėjimas, teleportas |
+| `/map` | `src/app/(protected)/map/page.tsx` | **Sandėlis 3D** — žymėjimas, perkėlimas, teleportas |
 | `/search` | `src/app/search/page.tsx` | **Paieška** — viso inventoriaus filtrai + „Rodyti sandėlyje“ |
 | `/orders` | `src/app/orders/page.tsx` | Užsakymų sąrašas |
 | `/orders/[id]` | `src/app/orders/[id]/page.tsx` | Užsakymo detalė, lipdukai, vieta |
-| `/receive/[shipmentId]` | `src/app/receive/...` | Atvykimo priėmimas |
+| `/laukia/[shipmentId]` | `src/app/(protected)/laukia/...` | Laukiamas atvykimas (dar neatvažiavo) |
+| `/laikoma/[shipmentId]` | `src/app/(protected)/laikoma/...` | Laikymo eilė: atvyko, skaičius + foto, dar nepriskirta |
 | `/pick/[orderId]` | `src/app/pick/...` | Atsiėmimas / važtaraštis |
 | `/archive` | `src/app/archive/page.tsx` | Archyvuoti užsakymai |
 | `/vizualizacija` | `src/app/vizualizacija/page.tsx` | 2D planas (SVG/PNG) |
 | `/u/[token]` | `src/app/u/[token]/page.tsx` | QR lipduko puslapis |
 | `/map?new=1` | — | Atidaro modalą „Naujas atvykimas“ |
+| `/map?move=UNIT_ID` | — | Perkėlimo režimas (footprint ant sijos / plotas ant grindų) |
 | `/map?rack=N&unit=ID&hint=1` | — | Teleportas + paryškinimas iš paieškos |
 
 ### API
@@ -90,12 +92,19 @@ src/
 │   ├── Warehouse3D.tsx     # 3D scena (~2000 eilučių — keisti atsargiai)
 │   ├── NewShipmentModal.tsx # Naujas atvykimas + parsinimas + custom laukai
 │   ├── LocationDetailModal.tsx
+│   ├── FloorAreaModal.tsx
+│   ├── ShelfFootprintModal.tsx
+│   ├── ExistingOrderAssignFields.tsx  # Esamas užsakymas: nauja dėžė arba perkelti
+│   ├── UnitPicker.tsx
+│   ├── WmsProvider.tsx       # Supabase sync + būsena
 │   └── ui/
 │       ├── Modal.tsx
 │       ├── LtDatePicker.tsx   # LT kalendorius (ne OS picker)
 │       └── HintLabel.tsx      # ? tooltip etiketėms
 └── lib/
-    ├── demo-store.ts       # Visa demo logika + localStorage
+    ├── demo-store.ts       # Visa demo logika + localStorage + migracijos
+    ├── wms-sync.ts         # Remote pull/push, dirty flag, backoff
+    ├── map-focus.ts        # Teleportas / paryškinimas žemėlapyje
     ├── locations.ts        # Stelažų geometrija + seed lokacijos
     ├── types.ts            # TypeScript tipai (+ CustomField)
     ├── placement.ts        # Vietos siūlymo algoritmas
@@ -125,7 +134,13 @@ AGENT_BRIEF.md              # Šis failas
 - Matmenys: **~29–30 m × ~11 m**
 - **Viršus (EXIT siena):** stelažai `7 8 9 10 11 12` — EXIT — `13 14 15`
 - **Apačia (ĮĖJIMAS):** `6 5 4 3 2 1` — ĮĖJIMAS — `18 17 16` (tarp 6–5 tarpo nėra)
-- **Kairė (1–12) ≈ EXPO**, **dešinė (13–18) ≈ DILED**
+- **Kairė (1–12) ≈ EXPO / Distyle**, **dešinė (13–18) ≈ DILED**
+- **Stelažų aukštai** (`rackLevelDefs` in `locations.ts`):
+  - **12** — 3 standartiniai aukštai (1, 2, 3)
+  - **13** — tik **2 aukštai** (1, 2); 3 aukšto nėra
+  - **14** — 1, **mini M**, 2, 3
+  - **1, 9, 10** — 2 aukštai (2 aukštas aukštas)
+- **3D ženklelis** ant stelažo: `badgeY` skaičiuojamas pagal faktinį aukštų skaičių (2 aukštų stelažams nenaudoti `beamYs[2]`).
 - **Raudoni stelažai 2.9×1.5×1.9 m:** 1–4, 9–12, 14–15, 16–17
 - **Mėlyni 1.9×1.5×1.8 m:** 5–8, 13, 18
 - Fiziniai lipdukai ant stelažų: tik **1–18**. K/D pusė ir aukštas (1–3) — tik sistemoje.
@@ -162,7 +177,7 @@ Tipai: `src/lib/types.ts`. Saugojimas demo režime: `src/lib/demo-store.ts`.
 | **Unit** | Viena dėžė arba paletė: QR, lipduko tekstas, vieta, footprint |
 | **Location** | Stelažo vieta (108+ pallet + small_shelf + special) |
 | **FloorArea** | Stačiakampis ant grindų (žymimas 3D tempiant) |
-| **Handover** | Atsiėmimo įrašas |
+| **Handover** | Atsiėmimo įrašas; `unitPlacements` — vietų snapshot archyvui |
 | **Defect** | Brokas priėmimo metu |
 
 ### Unit būsenos (kode → UI)
@@ -182,12 +197,27 @@ Vertimai: `src/lib/ui-labels.ts`.
 
 - `createOrderFromParsed()` — naujas užsakymas iš Gemini JSON (+ custom laukai)
 - `issueUnitFromQr(qrToken)` — viena dėžė išvykusi per QR; atlaisvina vietą; archyvuoja užsakymą jei paskutinė
-- `placeUnit()` / `placeUnitOnFloor()` — padėti į vietą
-- `receiveShipment()` — priimti atvykimą
-- `stageOrder()` / `issueOrder()` — atsiėmimo eiga
-- `searchInventory()` — paieška su filtrais
-- `getDashboardSummary()` — pradžios suvestinė
-- `suggestLocations()` / `placement.ts` — kur statyti
+- `placeUnit()` / `placeUnitOnFloor()` / `moveUnitToLocation()` — padėti / perkelti
+- `footprintConflictsAtLocation()` — ar footprint telpa ant sijos (K/D dalinasi vieną aukštą)
+- `unitsAtLocation()` — visos prekės tame pačiame aukšte (įsk. shared deck)
+- `assignOrderToShelf()` / `assignOrderToFloor()` — `assignMode: 'new' | 'move'`
+- `restoreOrderFromArchive()` — grąžina užsakymą + vienas iš `unitPlacements`
+- `issueUnitToClient()` — viena dėžė atsiimta iš žemėlapio (saugo `previousFloorAreaId`)
+- `findOverlappingFloorArea()` / `pruneEmptyFloorAreas()` — grindų plotų sujungimas / tuščių šalinimas
+- `getDashboardSummary()` — užimtumas (žr. §6.1)
+- `zoneAtFloorPoint(x, z)` — EXPO/DILED pagal artimiausią stelažą (grindų skaidymui)
+
+### 6.1 Užimtumas (pradžios kortelė)
+
+| Rodiklis | Skaičiavimas |
+|----------|----------------|
+| **Visas sandėlis %** | užimtos paletės vietos / visos paletės vietos |
+| **Distyle %** | EXPO+LONG užimtos / **visos** vietos (dalis iš 100%) |
+| **Diled %** | DILED užimtos / **visos** vietos |
+| **Ant grindų %** | prekių footprint m² / `ROOM.length × ROOM.width` (330 m²) |
+| **Grindys Distyle/Diled** | to paties ploto skaidymas pagal `zoneAtFloorPoint` |
+
+**Svarbu:** ant sijos kelios dėžės gali stovėti tame pačiame aukšte — tikrinti `footprintConflictsAtLocation`, ne `slotOccupancy` (binary).
 
 ---
 
@@ -214,6 +244,17 @@ Vertimai: `src/lib/ui-labels.ts`.
 
 1. `/search` — filtruoti pagal projektą, kodą, gamintoją, datas
 2. **„Rodyti sandėlyje“** → kamera teleportuoja, stelažas paryškinamas oranžine
+
+### Perkėlimas (3D žemėlapis)
+
+1. Užsakymo detalė arba žemėlapis → **Perkelti**
+2. Spustelėti naują vietą arba **pabrėžti laisvą plotą** ant sijos (net jei jau stovi kita dėžė)
+3. Sistema tikrina footprint persidengimą, ne „visa vieta užimta“
+
+### Archyvas
+
+- **Grąžinti iš archyvo** — atkuria vietas iš `Handover.unitPlacements` (senesni archyvai be snapshot gali reikalauti rankinio pastatymo)
+- **Klientas atsiėmė** — viena prekė iš žemėlapio be viso užsakymo archyvavimo
 
 ### Atsiėmimas
 
@@ -245,22 +286,19 @@ Vertimai: `src/lib/ui-labels.ts`.
 
 ---
 
-## 10. Kas jau padaryta (2026-07-21)
+## 10. Kas jau padaryta (2026-08-11)
 
 - [x] 3D sandėlio žemėlapis su užimtumu, žymėjimu ant grindų/sijų
-- [x] Pradžios suvestinė (`/`)
-- [x] Pilna paieška (`/search`) su teleportu
-- [x] Naujas atvykimas + Gemini parse + vietos siūlymas
-- [x] Lipdukai (CSV + print HTML)
-- [x] Smulkūs stelažai: 6/7, 15/16 tunelis, **16/17 prie sienos**
-- [x] LT UI be žargono + `HintLabel` tooltip
-- [x] Lietuviškas `LtDatePicker` (custom, ne OS)
-- [x] Lankštūs `customFields` + gamintojo profiliai
-- [x] QR puslapis `/u/[token]` su „Pažymėti išvykus“
-- [x] Universalus Gemini parseris (LT/EN + customFields)
-- [ ] Supabase integracija (schema paruošta, UI dar localStorage)
+- [x] Perkėlimo režimas + footprint ant dalinai užimtos sijos
+- [x] Esamo užsakymo priskyrimas: nauja dėžė arba perkelti esamą
+- [x] Archyvo grąžinimas + „Klientas atsiėmė“ ant žemėlapio
+- [x] Užimtumo skaidymas Distyle / Diled (stelažai + grindys)
+- [x] Stelažų 12–14 geometrija ir 13 stelažo 2 aukštai
+- [x] Supabase sync (dalinė — `WmsProvider`; localStorage vis dar šaltinis)
+- [x] Produkcinis deploy Vercel (`sandelio.vercel.app`)
+- [x] Pradžios suvestinė, paieška, Gemini parse, lipdukai, QR, LT UI
+- [ ] Pilnas Supabase kaip vienintelis šaltinis (be localStorage priklausomybės)
 - [ ] Auth / multi-user
-- [ ] Produkcinis deploy Vercel
 
 ---
 
@@ -271,7 +309,10 @@ Vertimai: `src/lib/ui-labels.ts`.
 3. **Next.js 16** — nesiremti sena App Router dokumentacija.
 4. **`Warehouse3D.tsx` didelis** — keisti tiksliai, neperrašyti viso failo.
 5. **Naujos lokacijos** — atnaujinti ir `locations.ts`, ir `supabase/seed_locations.sql`, ir 3D layout.
-6. **Plan mode** — implementacija vyksta tik **Agent** režime, ne Plan.
+6. **Perkėlimas / dalinė sija** — naudoti `footprintConflictsAtLocation`, ne `slotOccupancy` (binary).
+7. **Rack 13 migracijos** — nebekurti L2→L1 taisyklės, kuri atšauktų perkėlimą į 2 aukštą.
+8. **Deploy** — tik su savininko leidimu (`git push` → Vercel auto-deploy).
+9. **Plan mode** — implementacija vyksta tik **Agent** režime, ne Plan.
 
 ---
 

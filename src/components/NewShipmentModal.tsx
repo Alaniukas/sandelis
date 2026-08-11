@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CustomField, ManufacturerProfile, ParsedDocument, ParsedLine, Zone } from "@/lib/types";
 import {
   completeExpectedArrival,
+  copyHoldingPhotosToOrder,
   copyIncomingAttachmentToShipment,
   createOrderFromParsed,
+  isHoldingShipment,
   loadState,
   setShipmentAttachment,
 } from "@/lib/demo-store";
-import { uploadAttachment } from "@/lib/attachments";
+import { holdingPhotoHrefs, mediaViewHref, shipmentAttachmentHref, uploadAttachment } from "@/lib/attachments";
 import { pushWmsStateNow } from "@/lib/wms-sync";
 import { locationCode, rackLevelDefs, zoneForRack } from "@/lib/locations";
 import { formatLocationHuman } from "@/lib/ui-labels";
@@ -18,7 +20,6 @@ import { mergeUniqueNotes } from "@/lib/order-info";
 import { suggestPlacementLocal, type PlacementSuggestion } from "@/lib/placement";
 import { Modal } from "@/components/ui/Modal";
 import { NumberField, SuggestField } from "@/components/ui/FormFields";
-import { shipmentAttachmentHref } from "@/lib/attachments";
 import { HintLabel } from "@/components/ui/HintLabel";
 import { getFormSuggestions } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
@@ -123,6 +124,10 @@ export function NewShipmentModal({
   const [profiles, setProfiles] = useState<ManufacturerProfile[]>([]);
   const [profileNotes, setProfileNotes] = useState("");
   const [saveProfile, setSaveProfile] = useState(false);
+  const [orderPhotoUrls, setOrderPhotoUrls] = useState<string[]>([]);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const cameraPhotoRef = useRef<HTMLInputElement>(null);
+  const galleryPhotoRef = useRef<HTMLInputElement>(null);
 
   const hasTarget = !!(prefillLocation || prefillFloorAreaId);
   const isLegacy = variant === "legacy";
@@ -160,18 +165,26 @@ export function NewShipmentModal({
     setProfiles(loadManufacturerProfiles());
     setProfileNotes("");
     setSaveProfile(false);
+    setOrderPhotoUrls([]);
+    setPhotoUploading(false);
     if (fromIncomingShipmentId) {
       const inc = wmsState.shipments.find(
         (s) => s.id === fromIncomingShipmentId,
       );
+      if (inc?.holdingPhotoUrls?.length) {
+        setOrderPhotoUrls([...inc.holdingPhotoUrls]);
+      }
       if (inc?.parsedJson) {
         setDoc({
           ...inc.parsedJson,
           zone: inc.parsedJson.zone ?? prefillLocation?.zone ?? undefined,
         });
-        if (inc.parsedJson.colliHint && inc.parsedJson.colliHint > 0) {
-          setColli(inc.parsedJson.colliHint);
-        }
+        const hint =
+          (inc.boxCount && inc.boxCount > 0 ? inc.boxCount : null) ||
+          (inc.parsedJson.colliHint && inc.parsedJson.colliHint > 0
+            ? inc.parsedJson.colliHint
+            : null);
+        if (hint) setColli(hint);
         const shipNotes = inc.notes?.trim() ?? "";
         const docNotes = inc.parsedJson.notes?.trim() ?? "";
         if (
@@ -182,6 +195,7 @@ export function NewShipmentModal({
         }
       } else if (inc?.notes?.trim()) {
         setPlacementNotes(inc.notes.trim());
+        if (inc.boxCount && inc.boxCount > 0) setColli(inc.boxCount);
       }
     }
   }, [open, prefillLocation, prefillFloorAreaId, fromIncomingShipmentId, wmsState.shipments]);
@@ -215,6 +229,29 @@ export function NewShipmentModal({
     setSuggestion(null);
     setProfileNotes("");
     setSaveProfile(false);
+    setOrderPhotoUrls([]);
+    setPhotoUploading(false);
+  }
+
+  async function addOrderPhotos(list: FileList | null) {
+    if (!list?.length) return;
+    setPhotoUploading(true);
+    setError("");
+    const next = [...orderPhotoUrls];
+    for (const file of Array.from(list)) {
+      if (!file.type.startsWith("image/")) continue;
+      if (next.length >= 6) break;
+      const uploaded = await uploadAttachment(file);
+      if (!uploaded.storageUrl) {
+        setError(
+          uploaded.error || "Nepavyko įkelti nuotraukos — bandyk dar kartą",
+        );
+        break;
+      }
+      if (!next.includes(uploaded.storageUrl)) next.push(uploaded.storageUrl);
+    }
+    setOrderPhotoUrls(next);
+    setPhotoUploading(false);
   }
 
   function parseContext() {
@@ -388,6 +425,7 @@ export function NewShipmentModal({
       occupyEntireRack ? 1 : Math.max(1, colli),
       file?.name || incomingShipment?.documentName || "rankinis",
       placeOpts(),
+      { notePhotoUrls: orderPhotoUrls },
     );
     const order = state.orders[0];
     if (fromIncomingShipmentId) {
@@ -400,6 +438,12 @@ export function NewShipmentModal({
           newShipment.id,
         );
       }
+      // Jei kas liko laikymo foto — sujungti (neperdengti jau pridėtų)
+      state = copyHoldingPhotosToOrder(
+        state,
+        fromIncomingShipmentId,
+        order.id,
+      );
     }
     if (file && !fromIncomingShipmentId) {
       const uploaded = await uploadAttachment(file);
@@ -462,7 +506,7 @@ export function NewShipmentModal({
   }
 
   const title = fromIncomingShipmentId
-    ? `Registruoti atvykimą · ${incomingShipment?.parsedJson?.project || "Atkeliauja"}`
+    ? `Priskirti · ${incomingShipment?.parsedJson?.project || "iš laikymo"}`
     : isLegacy
     ? hasTarget
       ? `Žymėti seną · ${
@@ -575,9 +619,13 @@ export function NewShipmentModal({
         )}
 
         {incomingShipment && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
-            <p className="font-medium">Iš „Atkeliauja“ užrašo</p>
-            {incomingShipment && shipmentAttachmentHref(incomingShipment) && (
+          <div className="rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-950">
+            <p className="font-medium">
+              {isHoldingShipment(incomingShipment)
+                ? "Iš laikymo eilės"
+                : "Iš „Atkeliauja“ užrašo"}
+            </p>
+            {shipmentAttachmentHref(incomingShipment) && (
               <a
                 href={shipmentAttachmentHref(incomingShipment)!}
                 target="_blank"
@@ -589,6 +637,12 @@ export function NewShipmentModal({
                   ? ` (${incomingShipment.documentName})`
                   : ""}
               </a>
+            )}
+            {holdingPhotoHrefs(incomingShipment).length > 0 && (
+              <p className="mt-2 text-xs text-sky-800">
+                Laikymo nuotraukos bus perkeltos prie užsakymo
+                ({holdingPhotoHrefs(incomingShipment).length}).
+              </p>
             )}
           </div>
         )}
@@ -726,6 +780,79 @@ export function NewShipmentModal({
               onChange={(e) => update("notes", e.target.value)}
             />
           </Field>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-stone-700">
+              Nuotraukos prie užsakymo
+            </p>
+            <p className="text-xs text-stone-500">
+              Išliks ir padėjus sandėlyje. Galima iš laikymo arba pridėti naujų.
+            </p>
+            {orderPhotoUrls.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {orderPhotoUrls.map((url) => (
+                  <div key={url} className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={mediaViewHref(url)}
+                      alt=""
+                      className="h-20 w-20 rounded-lg object-cover ring-1 ring-stone-200"
+                    />
+                    <button
+                      type="button"
+                      className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-red-700 text-xs text-white"
+                      onClick={() =>
+                        setOrderPhotoUrls((p) => p.filter((u) => u !== url))
+                      }
+                      aria-label="Pašalinti"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              ref={cameraPhotoRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="sr-only"
+              onChange={(e) => {
+                void addOrderPhotos(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <input
+              ref={galleryPhotoRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="sr-only"
+              onChange={(e) => {
+                void addOrderPhotos(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={photoUploading || orderPhotoUrls.length >= 6}
+                className="flex min-h-11 items-center justify-center rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 px-3 py-2 text-sm font-semibold text-stone-800 active:bg-stone-100 disabled:opacity-40"
+                onClick={() => cameraPhotoRef.current?.click()}
+              >
+                {photoUploading ? "Įkeliama…" : "Fotografuoti"}
+              </button>
+              <button
+                type="button"
+                disabled={photoUploading || orderPhotoUrls.length >= 6}
+                className="flex min-h-11 items-center justify-center rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 px-3 py-2 text-sm font-semibold text-stone-800 active:bg-stone-100 disabled:opacity-40"
+                onClick={() => galleryPhotoRef.current?.click()}
+              >
+                Iš galerijos
+              </button>
+            </div>
+          </div>
 
           {!isLegacy && (
           <div className="space-y-3 rounded-xl border border-dashed border-stone-200 p-3">

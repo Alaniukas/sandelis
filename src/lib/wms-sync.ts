@@ -152,12 +152,20 @@ function stripLargeBinaryFromState(state: AppState): AppState {
   return {
     ...state,
     shipments: state.shipments.map((s) => {
-      if (!s.attachmentDataUrl) return s;
-      if (s.attachmentUrl) {
-        const { attachmentDataUrl: _, ...rest } = s;
-        return rest;
+      let next = s;
+      if (s.attachmentDataUrl && s.attachmentUrl) {
+        const { attachmentDataUrl: _, ...rest } = next;
+        next = rest;
       }
-      return s;
+      if (next.holdingPhotoUrls?.some((u) => u.startsWith("data:"))) {
+        next = {
+          ...next,
+          holdingPhotoUrls: next.holdingPhotoUrls.filter(
+            (u) => !u.startsWith("data:"),
+          ),
+        };
+      }
+      return next;
     }),
     defects: state.defects.map((d) => {
       if (!d.photoDataUrl) return d;
@@ -170,6 +178,15 @@ function stripLargeBinaryFromState(state: AppState): AppState {
       return {
         ...o,
         notePhotoUrls: o.notePhotoUrls.filter((u) => !u.startsWith("data:")),
+      };
+    }),
+    handovers: state.handovers.map((h) => {
+      if (!h.photoUrls?.length) return h;
+      const hasDataUrls = h.photoUrls.some((u) => u.startsWith("data:"));
+      if (!hasDataUrls) return h;
+      return {
+        ...h,
+        photoUrls: h.photoUrls.filter((u) => !u.startsWith("data:")),
       };
     }),
   };

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { HoldingArrivalModal } from "@/components/HoldingArrivalModal";
 import { IncomingArrivalModal } from "@/components/IncomingArrivalModal";
 import { NewShipmentModal } from "@/components/NewShipmentModal";
 import { signOut } from "@/lib/supabase/logout";
@@ -22,6 +23,7 @@ export function AppNav() {
   const router = useRouter();
   const [newOpen, setNewOpen] = useState(false);
   const [incomingOpen, setIncomingOpen] = useState(false);
+  const [holdingOpen, setHoldingOpen] = useState(false);
 
   function onShowPlacement(s: PlacementSuggestion) {
     router.push(
@@ -87,6 +89,13 @@ export function AppNav() {
           <div className="ml-auto hidden items-center gap-2 md:flex">
             <button
               type="button"
+              className="btn-primary !rounded-full !px-3.5 !py-1.5 !text-xs"
+              onClick={() => setHoldingOpen(true)}
+            >
+              Atvyko — laikom
+            </button>
+            <button
+              type="button"
               className="btn-secondary !rounded-full !px-3.5 !py-1.5 !text-xs"
               onClick={() => setIncomingOpen(true)}
             >
@@ -94,7 +103,7 @@ export function AppNav() {
             </button>
             <button
               type="button"
-              className="btn-primary !rounded-full !px-3.5 !py-1.5 !text-xs"
+              className="btn-secondary !rounded-full !px-3.5 !py-1.5 !text-xs"
               onClick={() => {
                 if (path === "/map") setNewOpen(true);
                 else router.push("/map?new=1");
@@ -118,6 +127,13 @@ export function AppNav() {
       <IncomingArrivalModal
         open={incomingOpen}
         onClose={() => setIncomingOpen(false)}
+      />
+      <HoldingArrivalModal
+        open={holdingOpen}
+        onClose={() => setHoldingOpen(false)}
+        onCreated={(id) => {
+          if (id) router.push(`/laikoma/${id}`);
+        }}
       />
       <NewShipmentModal
         open={newOpen}

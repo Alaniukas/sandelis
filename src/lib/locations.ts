@@ -25,7 +25,7 @@ export function zoneForRack(n: number): Zone {
 export const BAY_DEPTH_M = 1.5;
 
 /** Industrial stelažų aukštų aukščiai (m): 1 = prie žemės, 2–3 = sijos */
-export const RACK_LEVEL_Y = [0.38, 1.08, 2.08] as const;
+export const RACK_LEVEL_Y = [0.42, 1.28, 2.45] as const;
 
 export type RackLevelKey = number | "M";
 
@@ -44,34 +44,34 @@ const TWO_LEVEL_ONLY = new Set([13]);
 export function rackLevelDefs(rack: number): RackLevelDef[] {
   if (rack === 14) {
     return [
-      { key: 1, y: 0.38 },
-      { key: "M", y: 0.68, mini: true },
-      { key: 2, y: 1.08, tall: true },
-      { key: 3, y: 2.08 },
+      { key: 1, y: 0.42 },
+      { key: "M", y: 0.78, mini: true },
+      { key: 2, y: 1.28, tall: true },
+      { key: 3, y: 2.45 },
     ];
   }
   if (TWO_LEVEL_ONLY.has(rack)) {
     return [
-      { key: 1, y: 0.38 },
-      { key: 2, y: 1.08 },
+      { key: 1, y: 0.42 },
+      { key: 2, y: 1.28 },
     ];
   }
   if (TWO_LEVEL_VERY_TALL.has(rack)) {
     return [
-      { key: 1, y: 0.38 },
-      { key: 2, y: 1.28, tall: true },
+      { key: 1, y: 0.42 },
+      { key: 2, y: 1.48, tall: true },
     ];
   }
   if (TWO_LEVEL_TALL.has(rack)) {
     return [
-      { key: 1, y: 0.38 },
-      { key: 2, y: 1.15, tall: true },
+      { key: 1, y: 0.42 },
+      { key: 2, y: 1.35, tall: true },
     ];
   }
   return [
-    { key: 1, y: 0.38 },
-    { key: 2, y: 1.08 },
-    { key: 3, y: 2.08 },
+    { key: 1, y: 0.42 },
+    { key: 2, y: 1.28 },
+    { key: 3, y: 2.45 },
   ];
 }
 
@@ -490,7 +490,7 @@ export function getSmallShelfLayout(): SmallShelfBox[] {
 export function getOverDoorShelfLayout(): OverDoorShelfBox[] {
   const shelves: OverDoorShelfBox[] = [];
   const depth = 1.35;
-  const beamYs = [2.55, 3.4];
+  const beamYs = [2.95, 3.95];
 
   for (const door of getDoorGaps()) {
     const inward = door.wall === "bottom" ? -1 : 1;

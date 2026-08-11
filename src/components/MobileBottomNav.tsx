@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { HoldingArrivalModal } from "@/components/HoldingArrivalModal";
 import { IncomingArrivalModal } from "@/components/IncomingArrivalModal";
 import { NewShipmentModal } from "@/components/NewShipmentModal";
 import { NavTabIcon, type NavTabId } from "@/components/NavTabIcons";
@@ -62,6 +63,7 @@ export function MobileBottomNav() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [incomingOpen, setIncomingOpen] = useState(false);
+  const [holdingOpen, setHoldingOpen] = useState(false);
 
   function onShowPlacement(s: PlacementSuggestion) {
     router.push(
@@ -97,6 +99,24 @@ export function MobileBottomNav() {
             <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
               Greiti veiksmai
             </p>
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-sm font-semibold text-stone-900 active:bg-stone-100"
+              onClick={() => {
+                setMenuOpen(false);
+                setHoldingOpen(true);
+              }}
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-sky-900">
+                ⌄
+              </span>
+              <span>
+                Atvyko — laikom
+                <span className="mt-0.5 block text-xs font-normal text-stone-500">
+                  Skaičius + foto, be priskyrimo
+                </span>
+              </span>
+            </button>
             <button
               type="button"
               className="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-sm font-semibold text-stone-900 active:bg-stone-100"
@@ -186,6 +206,13 @@ export function MobileBottomNav() {
       <IncomingArrivalModal
         open={incomingOpen}
         onClose={() => setIncomingOpen(false)}
+      />
+      <HoldingArrivalModal
+        open={holdingOpen}
+        onClose={() => setHoldingOpen(false)}
+        onCreated={(id) => {
+          if (id) go(`/laikoma/${id}`);
+        }}
       />
       <NewShipmentModal
         open={newOpen}

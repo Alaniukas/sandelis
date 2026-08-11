@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { uploadAttachment } from "@/lib/attachments";
 import { issueOrder, loadState } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
 import {
@@ -10,6 +11,7 @@ import {
   unitStatusLabel,
   zoneLabel,
 } from "@/lib/ui-labels";
+import { pushWmsStateNow } from "@/lib/wms-sync";
 
 export default function PickPage() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -19,8 +21,28 @@ export default function PickPage() {
   const units = state.units.filter(
     (u) => u.orderId === orderId && u.status !== "archived",
   );
+  const expectedCount = units.length;
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const [recipient, setRecipient] = useState("");
+  const [confirmedCount, setConfirmedCount] = useState(
+    expectedCount > 0 ? String(expectedCount) : "",
+  );
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const [done, setDone] = useState("");
+
+  useEffect(() => {
+    if (!photoFile) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(photoFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photoFile]);
 
   if (!order) {
     return (
@@ -63,8 +85,50 @@ export default function PickPage() {
     w.document.close();
   }
 
+  async function confirmIssue() {
+    const name = recipient.trim() || "Klientas";
+    const count = Number(confirmedCount);
+    if (!Number.isFinite(count) || count < 1) {
+      setError("Įrašyk kiek dėžių atiduodi");
+      return;
+    }
+    if (expectedCount > 0 && count !== expectedCount) {
+      const ok = window.confirm(
+        `Sistemoje ${expectedCount} ${expectedCount === 1 ? "dėžė" : "dėžės"}, o tu įrašei ${count}. Tikrai tęsti?`,
+      );
+      if (!ok) return;
+    }
+    setBusy(true);
+    setError("");
+    let photoUrls: string[] | undefined;
+    if (photoFile) {
+      const uploaded = await uploadAttachment(photoFile);
+      if (!uploaded.storageUrl) {
+        setBusy(false);
+        setError(
+          uploaded.error ||
+            "Nepavyko įkelti nuotraukos — bandyk dar kartą arba be foto",
+        );
+        return;
+      }
+      photoUrls = [uploaded.storageUrl];
+    }
+    const next = issueOrder(loadState(), orderId, name, "", {
+      confirmedCount: count,
+      photoUrls,
+    });
+    try {
+      await pushWmsStateNow(next);
+    } catch {
+      /* local saved */
+    }
+    setDone("Išduota klientui");
+    setBusy(false);
+    setTimeout(() => router.push("/"), 800);
+  }
+
   return (
-    <div className="mx-auto max-w-xl space-y-5 py-4 sm:py-6">
+    <div className="mx-auto max-w-xl space-y-5 py-4 pb-28 sm:py-6">
       <div>
         <Link
           href={`/orders/${orderId}`}
@@ -124,6 +188,27 @@ export default function PickPage() {
 
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-stone-700">
+            Kiek dėžių atiduodi?
+          </span>
+          <input
+            className="field"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder={expectedCount ? String(expectedCount) : "Skaičius"}
+            value={confirmedCount}
+            onChange={(e) =>
+              setConfirmedCount(e.target.value.replace(/[^\d]/g, ""))
+            }
+          />
+          {expectedCount > 0 && (
+            <p className="mt-1 text-xs text-stone-500">
+              Sistemoje: {expectedCount}
+            </p>
+          )}
+        </label>
+
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-stone-700">
             Kas pasiėmė?
           </span>
           <input
@@ -134,16 +219,68 @@ export default function PickPage() {
           />
         </label>
 
+        <div>
+          <span className="mb-1 block text-sm font-medium text-stone-700">
+            Nuotrauka (rekomenduojama)
+          </span>
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            onChange={(e) => {
+              setPhotoFile(e.target.files?.[0] ?? null);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={(e) => {
+              setPhotoFile(e.target.files?.[0] ?? null);
+              e.target.value = "";
+            }}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="flex min-h-12 items-center justify-center rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-sm font-semibold text-stone-800 active:bg-stone-100"
+              onClick={() => cameraInputRef.current?.click()}
+            >
+              Fotografuoti
+            </button>
+            <button
+              type="button"
+              className="flex min-h-12 items-center justify-center rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-sm font-semibold text-stone-800 active:bg-stone-100"
+              onClick={() => galleryInputRef.current?.click()}
+            >
+              Iš galerijos
+            </button>
+          </div>
+          {previewUrl && (
+            <div className="mt-2 overflow-hidden rounded-xl border">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewUrl}
+                alt=""
+                className="max-h-48 w-full object-cover"
+              />
+            </div>
+          )}
+        </div>
+
+        {error && <p className="text-sm text-red-700">{error}</p>}
+
         <button
           type="button"
-          onClick={() => {
-            issueOrder(loadState(), orderId, recipient || "Klientas", "");
-            setDone("Išduota klientui");
-            setTimeout(() => router.push("/"), 800);
-          }}
+          disabled={busy}
+          onClick={() => void confirmIssue()}
           className="btn-primary w-full"
         >
-          Pažymėti: pasiėmė
+          {busy ? "Saugoma…" : "Pažymėti: pasiėmė"}
         </button>
 
         {done && (

@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { HoldingArrivalModal } from "@/components/HoldingArrivalModal";
 import { shipmentAttachmentHref } from "@/lib/attachments";
 import {
   deleteExpectedArrival,
   loadState,
-  markExpectedArrivalReceived,
   normalizeState,
 } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
@@ -17,6 +17,7 @@ export default function IncomingPage() {
   const { shipmentId } = useParams<{ shipmentId: string }>();
   const router = useRouter();
   const state = useWms();
+  const [holdingOpen, setHoldingOpen] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -50,7 +51,7 @@ export default function IncomingPage() {
     "";
 
   return (
-    <div className="mx-auto max-w-lg space-y-4 py-4">
+    <div className="mx-auto max-w-lg space-y-4 py-4 pb-28">
       <Link href="/" className="text-sm text-stone-600 underline">
         ← Pradžia
       </Link>
@@ -83,42 +84,33 @@ export default function IncomingPage() {
           href={shipmentAttachmentHref(shipment)!}
           target="_blank"
           rel="noopener noreferrer"
-          className="btn-secondary inline-flex"
+          className="btn-secondary inline-flex w-full"
         >
           Atidaryti dokumentą
           {shipment.documentName ? ` (${shipment.documentName})` : ""}
         </a>
       )}
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+      <div className="flex flex-col gap-2">
         <button
           type="button"
-          className="btn-primary w-full sm:w-auto"
+          className="btn-primary w-full"
+          onClick={() => setHoldingOpen(true)}
+        >
+          Atvyko — laikom
+        </button>
+        <button
+          type="button"
+          className="btn-secondary w-full"
           onClick={() =>
             router.push(`/map?new=1&fromIncoming=${shipmentId}`)
           }
         >
-          Atvyko — padėti sandėlyje
+          Atvyko — žinau projektą, padėti
         </button>
         <button
           type="button"
-          className="btn-secondary w-full sm:w-auto"
-          onClick={() => {
-            if (
-              window.confirm(
-                "Pažymėti, kad atvyko, bet dar nepadėta į vietą?",
-              )
-            ) {
-              markExpectedArrivalReceived(loadState(), shipmentId);
-              router.push("/");
-            }
-          }}
-        >
-          Atvyko — vėliau padėsiu
-        </button>
-        <button
-          type="button"
-          className="btn-danger w-full sm:w-auto"
+          className="btn-danger w-full"
           onClick={() => {
             if (window.confirm("Pašalinti šį įrašą iš laukiamų atvykimų?")) {
               deleteExpectedArrival(loadState(), shipmentId);
@@ -128,14 +120,22 @@ export default function IncomingPage() {
         >
           Pašalinti
         </button>
-        <Link href="/map?legacy=1" className="btn-secondary w-full sm:w-auto">
-          Tik žymėti vietą
-        </Link>
       </div>
 
       <p className="text-sm text-stone-500">
-        Čia ta pati informacija, kurią anksčiau rašydavai ant lapo prie lentos.
+        Jei nežinai projekto — rinkis „laikom“: skaičius + foto, vėliau
+        priskirsi.
       </p>
+
+      <HoldingArrivalModal
+        open={holdingOpen}
+        fromExpectedShipmentId={shipmentId}
+        onClose={() => setHoldingOpen(false)}
+        onCreated={(id) => {
+          if (id) router.push(`/laikoma/${id}`);
+          else router.push("/");
+        }}
+      />
     </div>
   );
 }

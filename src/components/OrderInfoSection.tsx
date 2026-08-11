@@ -69,8 +69,9 @@ export function OrderInfoSection({
                 target="_blank"
                 rel="noopener noreferrer"
               >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={url}
+                  src={mediaViewHref(url)}
                   alt=""
                   className="max-h-40 rounded-lg object-cover ring-1 ring-stone-200"
                 />

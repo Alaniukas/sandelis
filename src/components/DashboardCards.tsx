@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { HoldingArrivalModal } from "@/components/HoldingArrivalModal";
 import { IncomingArrivalModal } from "@/components/IncomingArrivalModal";
 import { shipmentAttachmentHref } from "@/lib/attachments";
 import {
   deleteExpectedArrival,
   getDashboardSummary,
   loadState,
-  markExpectedArrivalReceived,
 } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
 
@@ -17,7 +17,16 @@ export function DashboardCards() {
   const state = useWms();
   const router = useRouter();
   const [incomingOpen, setIncomingOpen] = useState(false);
+  const [holdingOpen, setHoldingOpen] = useState(false);
+  const [holdFromExpectedId, setHoldFromExpectedId] = useState<string | null>(
+    null,
+  );
   const summary = useMemo(() => getDashboardSummary(state), [state]);
+
+  function openHoldFromExpected(shipmentId: string) {
+    setHoldFromExpectedId(shipmentId);
+    setHoldingOpen(true);
+  }
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 py-4 text-center sm:max-w-none sm:py-6 sm:text-left">
@@ -34,6 +43,16 @@ export function DashboardCards() {
           <button
             type="button"
             className="btn-primary"
+            onClick={() => {
+              setHoldFromExpectedId(null);
+              setHoldingOpen(true);
+            }}
+          >
+            Atvyko — laikom
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
             onClick={() => router.push("/map?new=1")}
           >
             + Naujas atvykimas
@@ -116,6 +135,66 @@ export function DashboardCards() {
         </div>
       </div>
 
+      <section className="card-panel text-left border-sky-200 bg-sky-50/40">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-stone-900">
+              Laikoma — reikia išsiaiškinti
+            </h2>
+            <p className="mt-1 text-sm text-stone-500">
+              Atvyko, bet dar nepriskirta projektui
+            </p>
+          </div>
+          {summary.holding.length > 0 && (
+            <span className="rounded-full bg-sky-900 px-2.5 py-1 text-xs font-bold text-white">
+              {summary.holding.length}
+            </span>
+          )}
+        </div>
+        <div className="mt-3">
+          {summary.holding.length === 0 ? (
+            <p className="text-sm text-stone-500">Nieko nelaikoma</p>
+          ) : (
+            summary.holding.map((h) => (
+              <div key={h.shipmentId} className="list-row !bg-white/80">
+                <div className="min-w-0 flex-1 text-left">
+                  <p className="font-semibold text-stone-900">{h.title}</p>
+                  <p className="text-sm text-stone-500">
+                    {[
+                      h.boxCount != null
+                        ? `${h.boxCount} ${h.boxCount === 1 ? "dėžė" : "dėžės"}`
+                        : null,
+                      h.palletCount != null && h.palletCount > 0
+                        ? `${h.palletCount} pal.`
+                        : null,
+                      h.photoCount > 0
+                        ? `${h.photoCount} foto`
+                        : "be foto",
+                      h.arrivedAt
+                        ? new Date(h.arrivedAt).toLocaleString("lt-LT", {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+                <Link
+                  href={`/laikoma/${h.shipmentId}`}
+                  className="shrink-0 rounded-lg bg-stone-900 px-3 py-2 text-sm font-semibold text-white"
+                >
+                  Atidaryti
+                </Link>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card-panel text-left">
           <h2 className="font-display text-lg font-semibold text-stone-900">
@@ -195,21 +274,10 @@ export function DashboardCards() {
                       )}
                       <button
                         type="button"
-                        className="text-sm font-semibold text-emerald-800 underline decoration-emerald-200 underline-offset-2"
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              "Pažymėti, kad prekės jau atvažiavo? Vėliau jas padėsi sandėlyje.",
-                            )
-                          ) {
-                            markExpectedArrivalReceived(
-                              loadState(),
-                              a.shipmentId,
-                            );
-                          }
-                        }}
+                        className="text-sm font-semibold text-sky-900 underline decoration-sky-200 underline-offset-2"
+                        onClick={() => openHoldFromExpected(a.shipmentId)}
                       >
-                        Atvyko
+                        Atvyko — laikom
                       </button>
                       <button
                         type="button"
@@ -252,6 +320,17 @@ export function DashboardCards() {
       <IncomingArrivalModal
         open={incomingOpen}
         onClose={() => setIncomingOpen(false)}
+      />
+      <HoldingArrivalModal
+        open={holdingOpen}
+        fromExpectedShipmentId={holdFromExpectedId}
+        onClose={() => {
+          setHoldingOpen(false);
+          setHoldFromExpectedId(null);
+        }}
+        onCreated={(id) => {
+          if (id) router.push(`/laikoma/${id}`);
+        }}
       />
     </div>
   );
