@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { HoldingArrivalModal } from "@/components/HoldingArrivalModal";
-import { IncomingArrivalModal } from "@/components/IncomingArrivalModal";
 import { shipmentAttachmentHref } from "@/lib/attachments";
 import {
   deleteExpectedArrival,
@@ -16,7 +15,6 @@ import { useWms } from "@/lib/use-wms";
 export function DashboardCards() {
   const state = useWms();
   const router = useRouter();
-  const [incomingOpen, setIncomingOpen] = useState(false);
   const [holdingOpen, setHoldingOpen] = useState(false);
   const [holdFromExpectedId, setHoldFromExpectedId] = useState<string | null>(
     null,
@@ -50,26 +48,9 @@ export function DashboardCards() {
           >
             Atvyko — laikom
           </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => router.push("/map?new=1")}
-          >
-            + Naujas atvykimas
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => setIncomingOpen(true)}
-          >
-            + Atkeliauja
-          </button>
-          <Link href="/map" className="btn-secondary">
-            Atidaryti sandėlį
-          </Link>
-          <Link href="/search" className="btn-secondary">
-            Ieškoti prekės
-          </Link>
+          <p className="-mt-1 text-center text-xs text-stone-500 sm:text-left">
+            Nežinai projekto — skaičius ir foto
+          </p>
         </div>
       </div>
 
@@ -317,10 +298,6 @@ export function DashboardCards() {
           </div>
         </section>
       </div>
-      <IncomingArrivalModal
-        open={incomingOpen}
-        onClose={() => setIncomingOpen(false)}
-      />
       <HoldingArrivalModal
         open={holdingOpen}
         fromExpectedShipmentId={holdFromExpectedId}

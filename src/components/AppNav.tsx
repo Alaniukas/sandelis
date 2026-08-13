@@ -90,6 +90,7 @@ export function AppNav() {
             <button
               type="button"
               className="btn-primary !rounded-full !px-3.5 !py-1.5 !text-xs"
+              title="Nežinau projekto"
               onClick={() => setHoldingOpen(true)}
             >
               Atvyko — laikom
@@ -97,19 +98,21 @@ export function AppNav() {
             <button
               type="button"
               className="btn-secondary !rounded-full !px-3.5 !py-1.5 !text-xs"
-              onClick={() => setIncomingOpen(true)}
-            >
-              Atkeliauja
-            </button>
-            <button
-              type="button"
-              className="btn-secondary !rounded-full !px-3.5 !py-1.5 !text-xs"
+              title="Naujas arba prie esamo"
               onClick={() => {
                 if (path === "/map") setNewOpen(true);
                 else router.push("/map?new=1");
               }}
             >
-              + Atvykimas
+              Registruoti
+            </button>
+            <button
+              type="button"
+              className="btn-secondary !rounded-full !px-3.5 !py-1.5 !text-xs"
+              title="Dar neatvažiavo"
+              onClick={() => setIncomingOpen(true)}
+            >
+              Laukia
             </button>
             {isSupabaseConfigured() && (
               <button

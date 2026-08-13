@@ -14,8 +14,10 @@ import {
   zoneLabel,
 } from "@/lib/ui-labels";
 import { suggestPlacementLocal } from "@/lib/placement";
+import { holdingPhotoHrefs, shipmentAttachmentHref } from "@/lib/attachments";
 import { OrderInfoSection } from "@/components/OrderInfoSection";
 import { OrderEditSection } from "@/components/OrderEditSection";
+import { NewShipmentModal } from "@/components/NewShipmentModal";
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +27,7 @@ export default function OrderDetailPage() {
   const units = state.units.filter((u) => u.orderId === id);
   const shipments = state.shipments.filter((s) => s.orderId === id);
   const [msg, setMsg] = useState("");
+  const [arriveOpen, setArriveOpen] = useState(false);
 
   const suggestion = useMemo(() => {
     if (!order) return null;
@@ -196,6 +199,13 @@ export default function OrderDetailPage() {
           )}
           <button
             type="button"
+            onClick={() => setArriveOpen(true)}
+            className="btn-secondary"
+          >
+            + Dar atvyko
+          </button>
+          <button
+            type="button"
             onClick={showSuggestedPlacement}
             className="btn-secondary"
           >
@@ -231,6 +241,123 @@ export default function OrderDetailPage() {
       </section>
 
       <OrderEditSection orderId={order.id} />
+
+      <section className="card-panel">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-stone-900">
+              Atvykimai
+            </h2>
+            <p className="mt-1 text-sm text-stone-500">
+              Kiekviena siunta atskirai — data, skaičius, foto
+            </p>
+          </div>
+          {order.status === "active" && (
+            <button
+              type="button"
+              className="btn-secondary !py-2 !text-xs"
+              onClick={() => setArriveOpen(true)}
+            >
+              + Dar atvyko
+            </button>
+          )}
+        </div>
+        <ul className="mt-3 divide-y divide-stone-100">
+          {[...shipments]
+            .sort((a, b) => {
+              const ta = a.arrivedAt || a.createdAt;
+              const tb = b.arrivedAt || b.createdAt;
+              return tb.localeCompare(ta);
+            })
+            .map((s, i) => {
+              const shipUnits = units.filter((u) => u.shipmentId === s.id);
+              const photos = holdingPhotoHrefs(s);
+              const docHref = shipmentAttachmentHref(s);
+              const when = s.arrivedAt || s.createdAt;
+              const places = [
+                ...new Set(
+                  shipUnits.map((u) => {
+                    const loc = state.locations.find((l) => l.id === u.locationId);
+                    const floor = u.floorAreaId
+                      ? state.floorAreas.find((f) => f.id === u.floorAreaId)
+                      : null;
+                    return floor
+                      ? floor.label || "Ant grindų"
+                      : formatLocationHuman(loc?.code ?? null, loc?.label);
+                  }),
+                ),
+              ].filter((p) => p && p !== "—");
+              return (
+                <li key={s.id} className="py-3.5">
+                  <p className="font-semibold text-stone-900">
+                    Atvykimas {shipments.length - i}
+                  </p>
+                  <p className="mt-0.5 text-sm text-stone-600">
+                    {[
+                      when
+                        ? new Date(when).toLocaleString("lt-LT", {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : null,
+                      s.boxCount != null
+                        ? `${s.boxCount} ${s.boxCount === 1 ? "dėžė" : "dėžės"}`
+                        : null,
+                      s.palletCount != null && s.palletCount > 0
+                        ? `${s.palletCount} pal.`
+                        : null,
+                      places.length ? places.join(", ") : "vieta nepažymėta",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                  {s.notes?.trim() && (
+                    <p className="mt-1 text-xs whitespace-pre-wrap text-stone-600">
+                      {s.notes}
+                    </p>
+                  )}
+                  {docHref && (
+                    <a
+                      href={docHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-block text-sm font-semibold underline"
+                    >
+                      Dokumentas
+                      {s.documentName ? ` (${s.documentName})` : ""}
+                    </a>
+                  )}
+                  {photos.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {photos.map((href) => (
+                        <a
+                          key={href}
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={href}
+                            alt=""
+                            className="h-16 w-16 rounded-lg object-cover ring-1 ring-stone-200"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          {shipments.length === 0 && (
+            <li className="py-4 text-sm text-stone-500">
+              Dar nėra atvykimų
+            </li>
+          )}
+        </ul>
+      </section>
 
       <OrderInfoSection orderId={order.id} id="info" />
 
@@ -330,6 +457,12 @@ export default function OrderDetailPage() {
           </button>
         </section>
       )}
+      <NewShipmentModal
+        open={arriveOpen}
+        attachToOrderId={order.id}
+        onClose={() => setArriveOpen(false)}
+        onCreated={() => setArriveOpen(false)}
+      />
     </div>
   );
 }

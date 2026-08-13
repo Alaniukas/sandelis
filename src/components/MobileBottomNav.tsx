@@ -113,7 +113,7 @@ export function MobileBottomNav() {
               <span>
                 Atvyko — laikom
                 <span className="mt-0.5 block text-xs font-normal text-stone-500">
-                  Skaičius + foto, be priskyrimo
+                  Nežinau projekto
                 </span>
               </span>
             </button>
@@ -129,7 +129,12 @@ export function MobileBottomNav() {
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-stone-900 text-white">
                 +
               </span>
-              Naujas atvykimas
+              <span>
+                Registruoti
+                <span className="mt-0.5 block text-xs font-normal text-stone-500">
+                  Naujas arba prie esamo
+                </span>
+              </span>
             </button>
             <button
               type="button"
@@ -142,7 +147,12 @@ export function MobileBottomNav() {
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-900">
                 →
               </span>
-              Atkeliauja (dar neatvažiavo)
+              <span>
+                Laukia
+                <span className="mt-0.5 block text-xs font-normal text-stone-500">
+                  Dar neatvažiavo
+                </span>
+              </span>
             </button>
             <Link
               href="/archive"

@@ -72,6 +72,7 @@ function MapInner() {
   const [newOpen, setNewOpen] = useState(false);
   const [legacyMode, setLegacyMode] = useState(false);
   const [fromIncomingId, setFromIncomingId] = useState<string | null>(null);
+  const [attachToOrderId, setAttachToOrderId] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<PrefillLocation | null>(null);
   const [prefillFloorId, setPrefillFloorId] = useState<string | null>(null);
   const [prefillFloorLabel, setPrefillFloorLabel] = useState<string | null>(
@@ -88,6 +89,7 @@ function MapInner() {
   const focusRetryTimerRef = useRef<number | null>(null);
   const moveInitRef = useRef<string | null>(null);
   const [moveUnitId, setMoveUnitId] = useState<string | null>(null);
+  const [moveIsPlace, setMoveIsPlace] = useState(false);
   const [moveFeedback, setMoveFeedback] = useState<string | null>(null);
 
   function clearMapFocus() {
@@ -98,18 +100,23 @@ function MapInner() {
     setHintText(null);
     setFocusHighlight(false);
     setMoveUnitId(null);
+    setMoveIsPlace(false);
     moveInitRef.current = null;
     setMoveFeedback(null);
     canvasRef.current?.clearFocus();
   }
 
   function finishMove(successMsg: string) {
+    const done = moveIsPlace
+      ? successMsg.replace("Perkelta", "Padėta")
+      : successMsg;
     setMoveUnitId(null);
+    setMoveIsPlace(false);
     moveInitRef.current = null;
     setMoveFeedback(null);
     setFocusHighlight(false);
     canvasRef.current?.clearFocus();
-    setHintText(successMsg);
+    setHintText(done);
     window.setTimeout(() => setHintText(null), 4000);
   }
 
@@ -231,6 +238,11 @@ function MapInner() {
       setFromIncomingId(incoming);
       setNewOpen(true);
     }
+    const toOrder = params.get("toOrder");
+    if (toOrder) {
+      setAttachToOrderId(toOrder);
+      setNewOpen(true);
+    }
   }, [params]);
 
   useEffect(() => {
@@ -289,12 +301,14 @@ function MapInner() {
     setMoveFeedback(null);
     focusAppliedRef.current = true;
     pendingFocusRef.current = null;
+    const placing = params.get("place") === "1";
+    setMoveIsPlace(placing);
     const label = params.get("label");
     const unit = state.units.find((u) => u.id === move);
     const name = label
       ? decodeURIComponent(label)
       : unit?.labelTitle ?? "prekę";
-    setHintText(`Perkeli: ${name}`);
+    setHintText(placing ? `Kur padėjai: ${name}` : `Perkeli: ${name}`);
     router.replace("/map", { scroll: false });
   }, [params, router, state.units]);
 
@@ -526,9 +540,20 @@ function MapInner() {
         <div className="mx-3 shrink-0 rounded-xl border-2 border-yellow-400 bg-yellow-50 px-4 py-3 text-sm text-yellow-950 sm:mx-0">
           <p className="font-semibold">{hintText}</p>
           <p className="mt-1.5 leading-relaxed text-yellow-900">
-            <span className="font-medium">2 žingsnis:</span> spausk žalią
-            laisvą vietą <span className="font-semibold">arba nubrėžk plotą</span>{" "}
-            ant stelažo (tempk pele / pirštu). Ne ten, kur stovi dabar.
+            {moveIsPlace ? (
+              <>
+                Spausk žalią laisvą vietą{" "}
+                <span className="font-semibold">arba nubrėžk plotą</span> ant
+                stelažo (tempk pele / pirštu).
+              </>
+            ) : (
+              <>
+                <span className="font-medium">2 žingsnis:</span> spausk žalią
+                laisvą vietą{" "}
+                <span className="font-semibold">arba nubrėžk plotą</span> ant
+                stelažo (tempk pele / pirštu). Ne ten, kur stovi dabar.
+              </>
+            )}
           </p>
           {moveFeedback && (
             <p className="mt-2 rounded-lg bg-white/80 px-2.5 py-1.5 text-sm font-medium text-amber-900">
@@ -540,7 +565,7 @@ function MapInner() {
             className="btn-secondary mt-3 !px-3 !py-2 !text-xs"
             onClick={clearMapFocus}
           >
-            Atšaukti perkėlimą
+            {moveIsPlace ? "Padėsiu vėliau" : "Atšaukti perkėlimą"}
           </button>
         </div>
       )}
@@ -641,14 +666,21 @@ function MapInner() {
         prefillFloorLabel={prefillFloorLabel}
         onShowPlacement={onShowPlacement}
         fromIncomingShipmentId={fromIncomingId}
+        attachToOrderId={attachToOrderId}
         onClose={() => {
           setNewOpen(false);
           setLegacyMode(false);
           setFromIncomingId(null);
+          setAttachToOrderId(null);
           setPrefill(null);
           setPrefillFloorId(null);
           setPrefillFloorLabel(null);
-          if (params.get("fromIncoming") || params.get("legacy") || params.get("new")) {
+          if (
+            params.get("fromIncoming") ||
+            params.get("legacy") ||
+            params.get("new") ||
+            params.get("toOrder")
+          ) {
             router.replace("/map", { scroll: false });
           }
         }}

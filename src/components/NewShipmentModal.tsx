@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CustomField, ManufacturerProfile, ParsedDocument, ParsedLine, Zone } from "@/lib/types";
 import {
+  addShipmentToOrder,
   completeExpectedArrival,
   copyHoldingPhotosToOrder,
   copyIncomingAttachmentToShipment,
@@ -23,6 +24,7 @@ import { NumberField, SuggestField } from "@/components/ui/FormFields";
 import { HintLabel } from "@/components/ui/HintLabel";
 import { getFormSuggestions } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
+import { OrderPicker } from "@/components/OrderPicker";
 import {
   loadManufacturerProfiles,
   newCustomField,
@@ -64,6 +66,7 @@ export function NewShipmentModal({
   prefillFloorAreaId,
   prefillFloorLabel,
   fromIncomingShipmentId,
+  attachToOrderId,
   variant = "default",
 }: {
   open: boolean;
@@ -76,6 +79,8 @@ export function NewShipmentModal({
   prefillFloorLabel?: string | null;
   /** Užpildyti iš „Atkeliauja“ įrašo ir uždaryti jį po išsaugojimo */
   fromIncomingShipmentId?: string | null;
+  /** Iš karto prie šio užsakymo (dalinis atvykimas) */
+  attachToOrderId?: string | null;
   /** legacy = senas užsakymas, minimalūs laukai, be DI */
   variant?: "default" | "legacy";
 }) {
@@ -128,12 +133,18 @@ export function NewShipmentModal({
   const [photoUploading, setPhotoUploading] = useState(false);
   const cameraPhotoRef = useRef<HTMLInputElement>(null);
   const galleryPhotoRef = useRef<HTMLInputElement>(null);
+  const [attachMode, setAttachMode] = useState<"new" | "existing">("new");
+  const [existingOrderId, setExistingOrderId] = useState("");
+  const [placeSame, setPlaceSame] = useState(true);
+  const [palletCount, setPalletCount] = useState(0);
 
   const hasTarget = !!(prefillLocation || prefillFloorAreaId);
   const isLegacy = variant === "legacy";
   const incomingShipment = fromIncomingShipmentId
     ? wmsState.shipments.find((s) => s.id === fromIncomingShipmentId)
     : null;
+  const wmsRef = useRef(wmsState);
+  wmsRef.current = wmsState;
 
   const selectedLocationId = useMemo(() => {
     if (prefillLocation?.locationId) return prefillLocation.locationId;
@@ -144,6 +155,7 @@ export function NewShipmentModal({
 
   useEffect(() => {
     if (!open) return;
+    const wms = wmsRef.current;
     setOccupyEntireRack(false);
     setPlaceNow(true);
     setError("");
@@ -167,8 +179,16 @@ export function NewShipmentModal({
     setSaveProfile(false);
     setOrderPhotoUrls([]);
     setPhotoUploading(false);
+    setAttachMode("new");
+    setExistingOrderId("");
+    setPlaceSame(!prefillLocation && !prefillFloorAreaId);
+    setPalletCount(0);
+    if (attachToOrderId) {
+      setAttachMode("existing");
+      setExistingOrderId(attachToOrderId);
+    }
     if (fromIncomingShipmentId) {
-      const inc = wmsState.shipments.find(
+      const inc = wms.shipments.find(
         (s) => s.id === fromIncomingShipmentId,
       );
       if (inc?.holdingPhotoUrls?.length) {
@@ -193,12 +213,28 @@ export function NewShipmentModal({
         ) {
           setPlacementNotes(shipNotes);
         }
+        if (!attachToOrderId) {
+          const q = (inc.parsedJson.project || "").trim().toLowerCase();
+          if (q) {
+            const match = wms.orders.find(
+              (o) =>
+                o.status === "active" &&
+                (o.project.trim().toLowerCase() === q ||
+                  o.orderCode.trim().toLowerCase() === q),
+            );
+            if (match) {
+              setAttachMode("existing");
+              setExistingOrderId(match.id);
+            }
+          }
+        }
       } else if (inc?.notes?.trim()) {
         setPlacementNotes(inc.notes.trim());
         if (inc.boxCount && inc.boxCount > 0) setColli(inc.boxCount);
       }
+      if (inc?.palletCount != null) setPalletCount(inc.palletCount);
     }
-  }, [open, prefillLocation, prefillFloorAreaId, fromIncomingShipmentId, wmsState.shipments]);
+  }, [open, prefillLocation, prefillFloorAreaId, fromIncomingShipmentId, attachToOrderId]);
 
   useEffect(() => {
     if (!doc.source) return;
@@ -231,6 +267,10 @@ export function NewShipmentModal({
     setSaveProfile(false);
     setOrderPhotoUrls([]);
     setPhotoUploading(false);
+    setAttachMode("new");
+    setExistingOrderId("");
+    setPlaceSame(true);
+    setPalletCount(0);
   }
 
   async function addOrderPhotos(list: FileList | null) {
@@ -399,6 +439,87 @@ export function NewShipmentModal({
   }
 
   async function save() {
+    if (!isLegacy && attachMode === "existing") {
+      if (!existingOrderId) {
+        setError("Pasirink užsakymą, prie kurio pridėti atvykimą");
+        return;
+      }
+      let attachmentUrl = incomingShipment?.attachmentUrl || null;
+      let attachmentStoragePath = incomingShipment?.attachmentStoragePath || null;
+      let documentName = incomingShipment?.documentName || file?.name || null;
+      if (file) {
+        const uploaded = await uploadAttachment(file);
+        if (!uploaded.storageUrl) {
+          setError(uploaded.error || "Nepavyko įkelti failo");
+          return;
+        }
+        attachmentUrl = uploaded.storageUrl;
+        attachmentStoragePath = uploaded.storagePath;
+        documentName = file.name;
+      }
+      const opts = placeOpts();
+      const useSame = placeSame && !hasTarget;
+      const result = addShipmentToOrder(loadState(), existingOrderId, {
+        boxCount: occupyEntireRack ? 1 : Math.max(1, colli),
+        palletCount: palletCount > 0 ? palletCount : null,
+        notes: mergeUniqueNotes(doc.notes, placementNotes),
+        holdingPhotoUrls: orderPhotoUrls,
+        attachmentUrl,
+        attachmentStoragePath,
+        documentName,
+        placeSame: useSame,
+        locationId: useSame ? undefined : opts.placeNow ? opts.locationId : null,
+        floorAreaId: useSame
+          ? undefined
+          : opts.placeNow
+            ? opts.floorAreaId
+            : null,
+        occupiesEntireRack: useSame ? undefined : opts.occupiesEntireRack,
+        footprintW: useSame ? undefined : opts.footprintW,
+        footprintD: useSame ? undefined : opts.footprintD,
+        footprintOffsetX: useSame ? undefined : opts.footprintOffsetX,
+        footprintOffsetZ: useSame ? undefined : opts.footprintOffsetZ,
+      });
+      let state = result.state;
+      if (fromIncomingShipmentId) {
+        state = completeExpectedArrival(state, fromIncomingShipmentId);
+        const newShip = state.shipments.find(
+          (s) => s.orderId === existingOrderId,
+        );
+        if (newShip) {
+          state = copyIncomingAttachmentToShipment(
+            state,
+            fromIncomingShipmentId,
+            newShip.id,
+          );
+        }
+      }
+      void pushWmsStateNow(state);
+      const orderId = existingOrderId;
+      reset();
+      onClose();
+      onCreated?.(orderId);
+      if (result.conflict) {
+        window.alert(
+          "Šioje vietoje jau stovi kita prekė — atvykimas įrašytas, bet dėžę padėk žemėlapyje.",
+        );
+      }
+      const needMapPick =
+        !!result.unitId && (!result.placed || result.conflict) && !useSame;
+      if (needMapPick) {
+        const order = state.orders.find((o) => o.id === orderId);
+        const label = encodeURIComponent(
+          order?.project || order?.orderCode || "atvykimas",
+        );
+        router.push(
+          `/map?move=${result.unitId}&place=1&label=${label}`,
+        );
+        return;
+      }
+      router.push(`/orders/${orderId}`);
+      return;
+    }
+
     if (!doc.project.trim() && !doc.orderCode.trim() && !doc.client.trim()) {
       setError("Įrašyk bent projektą, kodą arba klientą");
       return;
@@ -507,6 +628,8 @@ export function NewShipmentModal({
 
   const title = fromIncomingShipmentId
     ? `Priskirti · ${incomingShipment?.parsedJson?.project || "iš laikymo"}`
+    : attachToOrderId
+    ? "Dar atvyko"
     : isLegacy
     ? hasTarget
       ? `Žymėti seną · ${
@@ -640,9 +763,111 @@ export function NewShipmentModal({
             )}
             {holdingPhotoHrefs(incomingShipment).length > 0 && (
               <p className="mt-2 text-xs text-sky-800">
-                Laikymo nuotraukos bus perkeltos prie užsakymo
+                Laikymo nuotraukos bus perkeltos prie šio atvykimo
                 ({holdingPhotoHrefs(incomingShipment).length}).
               </p>
+            )}
+          </div>
+        )}
+
+        {!isLegacy && (
+          <div className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
+            <p className="section-label">Kam priklauso</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                className={`rounded-xl border px-3 py-3 text-left text-sm ${
+                  attachMode === "new"
+                    ? "border-stone-900 bg-stone-900 text-white"
+                    : "border-stone-200 bg-stone-50 text-stone-800"
+                }`}
+                onClick={() => setAttachMode("new")}
+              >
+                <span className="block font-semibold">Naujas projektas</span>
+                <span
+                  className={`mt-0.5 block text-xs ${
+                    attachMode === "new" ? "text-stone-300" : "text-stone-500"
+                  }`}
+                >
+                  Sukurti naują užsakymą
+                </span>
+              </button>
+              <button
+                type="button"
+                className={`rounded-xl border px-3 py-3 text-left text-sm ${
+                  attachMode === "existing"
+                    ? "border-stone-900 bg-stone-900 text-white"
+                    : "border-stone-200 bg-stone-50 text-stone-800"
+                }`}
+                onClick={() => setAttachMode("existing")}
+              >
+                <span className="block font-semibold">Prie esamo užsakymo</span>
+                <span
+                  className={`mt-0.5 block text-xs ${
+                    attachMode === "existing" ? "text-stone-300" : "text-stone-500"
+                  }`}
+                >
+                  Dar vienas atvykimas tam pačiam projektui
+                </span>
+              </button>
+            </div>
+            {attachMode === "existing" && (
+              <>
+                <OrderPicker
+                  orders={wmsState.orders.filter((o) => o.status === "active")}
+                  value={existingOrderId}
+                  onChange={setExistingOrderId}
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <NumberField
+                    label="Kiek dėžių"
+                    min={1}
+                    value={colli}
+                    onChange={setColli}
+                  />
+                  <NumberField
+                    label="Palečių"
+                    min={0}
+                    value={palletCount}
+                    onChange={setPalletCount}
+                  />
+                </div>
+                {!hasTarget && (
+                  <div className="space-y-2 rounded-xl bg-stone-50 p-3">
+                    <p className="text-sm font-medium text-stone-800">Kur dėti?</p>
+                    <label className="flex items-start gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="place-same"
+                        className="mt-0.5"
+                        checked={placeSame}
+                        onChange={() => setPlaceSame(true)}
+                      />
+                      <span>
+                        Ta pati vieta
+                        <span className="mt-0.5 block text-xs text-stone-500">
+                          Šalia to, kas jau stovi šiam užsakymui
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="place-same"
+                        className="mt-0.5"
+                        checked={!placeSame}
+                        onChange={() => setPlaceSame(false)}
+                      />
+                      <span>
+                          Kita vieta
+                        <span className="mt-0.5 block text-xs text-stone-500">
+                          Po įrašymo žemėlapyje parodys, kur padėjai
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -654,7 +879,7 @@ export function NewShipmentModal({
           </p>
         )}
 
-        {!isLegacy && (
+        {!isLegacy && attachMode === "new" && (
         <div className="space-y-3 rounded-xl border border-stone-200 bg-stone-50 p-4">
           <HintLabel
             label="Iš dokumento"
@@ -703,6 +928,8 @@ export function NewShipmentModal({
         )}
 
         <div className="space-y-3">
+          {attachMode !== "existing" && (
+            <>
           <p className="section-label">
             {isLegacy ? "Kas čia stovi" : "Užsakymas"}
           </p>
@@ -772,6 +999,8 @@ export function NewShipmentModal({
               />
             )}
           </div>
+            </>
+          )}
           <Field label="Pastabos">
             <textarea
               className="field"
@@ -989,7 +1218,7 @@ export function NewShipmentModal({
         </div>
 
         {/* Vieta sandėlyje */}
-        {!prefillFloorAreaId && !isLegacy && (
+        {!prefillFloorAreaId && !isLegacy && attachMode !== "existing" && (
           <div className="space-y-3 rounded-xl border border-stone-200 p-4">
             <p className="section-label">Kur dėti?</p>
             <Field label="Pastabos vietai (laikas, dydis, zona…)">
@@ -1153,7 +1382,9 @@ export function NewShipmentModal({
             className="btn-primary w-full sm:w-auto"
             onClick={save}
           >
-            {placeNow && (selectedLocationId || prefillFloorAreaId)
+            {attachMode === "existing"
+              ? "Įrašyti atvykimą"
+              : placeNow && (selectedLocationId || prefillFloorAreaId)
               ? isLegacy
                 ? "Išsaugoti žymėjimą"
                 : "Sukurti ir padėti"

@@ -540,6 +540,229 @@ export function createOrderFromParsed(
   return next;
 }
 
+export function latestShipmentForOrder(
+  state: AppState,
+  orderId: string,
+): Shipment | undefined {
+  const list = state.shipments.filter((s) => s.orderId === orderId);
+  if (!list.length) return undefined;
+  return [...list].sort((a, b) => {
+    const ta = a.arrivedAt || a.createdAt;
+    const tb = b.arrivedAt || b.createdAt;
+    return tb.localeCompare(ta);
+  })[0];
+}
+
+function lastPlacedUnitForOrder(state: AppState, orderId: string): Unit | undefined {
+  const list = state.units.filter(
+    (u) =>
+      u.orderId === orderId &&
+      u.status !== "issued" &&
+      u.status !== "archived" &&
+      (u.locationId || u.floorAreaId),
+  );
+  if (!list.length) return undefined;
+  return [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+}
+
+/** Naujas atvykimas prie jau esamo užsakymo (dėžė + siunta, foto ant siuntos). */
+export function addShipmentToOrder(
+  state: AppState,
+  orderId: string,
+  data: {
+    boxCount: number;
+    palletCount?: number | null;
+    notes?: string;
+    holdingPhotoUrls?: string[];
+    holdingPhotoStoragePaths?: string[];
+    attachmentUrl?: string | null;
+    attachmentStoragePath?: string | null;
+    documentName?: string | null;
+    placeSame?: boolean;
+    locationId?: string | null;
+    floorAreaId?: string | null;
+    occupiesEntireRack?: boolean;
+    footprintW?: number | null;
+    footprintD?: number | null;
+    footprintOffsetX?: number | null;
+    footprintOffsetZ?: number | null;
+  },
+): { state: AppState; placed: boolean; conflict: boolean; unitId?: string } {
+  const order = state.orders.find((o) => o.id === orderId);
+  if (!order || order.status !== "active") {
+    return { state, placed: false, conflict: false };
+  }
+  const now = new Date().toISOString();
+  const colli = Math.max(1, Math.floor(data.boxCount));
+  const orderUnits = state.units.filter(
+    (u) =>
+      u.orderId === orderId &&
+      u.status !== "issued" &&
+      u.status !== "archived",
+  );
+  const idx = orderUnits.length + 1;
+
+  let locId = data.locationId ?? null;
+  let floorId = data.floorAreaId ?? null;
+  let occupyAll = !!data.occupiesEntireRack;
+  let fpW = data.footprintW ?? null;
+  let fpD = data.footprintD ?? null;
+  let fpX = data.footprintOffsetX ?? null;
+  let fpZ = data.footprintOffsetZ ?? null;
+  let conflict = false;
+
+  if (data.placeSame) {
+    const last = lastPlacedUnitForOrder(state, orderId);
+    if (last) {
+      locId = last.locationId;
+      floorId = last.floorAreaId;
+      occupyAll = last.occupiesEntireRack;
+      fpW = last.footprintW;
+      fpD = last.footprintD;
+      fpX = last.footprintOffsetX;
+      fpZ = last.footprintOffsetZ;
+    }
+  }
+
+  if (locId && !occupyAll && fpW != null && fpD != null) {
+    conflict = footprintConflictsAtLocation(state, locId, {
+      w: fpW,
+      d: fpD,
+      offsetX: fpX ?? 0,
+      offsetZ: fpZ ?? 0,
+    });
+    if (conflict) {
+      locId = null;
+      floorId = null;
+    }
+  }
+
+  const placed = !!(locId || floorId);
+  const span =
+    occupyAll ? ("full" as const) : (fpW != null && fpW < 0.75 ? "half" : "full");
+  const half =
+    occupyAll || span === "full" ? null : (fpX ?? 0) < 0 ? ("L" as const) : ("R" as const);
+
+  const shipment: Shipment = {
+    id: uuid(),
+    orderId,
+    status: "arrived",
+    carrier: "",
+    expectedAt: null,
+    arrivedAt: now,
+    palletCount: data.palletCount ?? null,
+    boxCount: colli,
+    notes: data.notes?.trim() || "",
+    documentName: data.documentName || null,
+    parsedJson: {
+      source: "partial-arrival",
+      orderCode: order.orderCode,
+      project: order.project,
+      client: order.client,
+      lines: [],
+      colliHint: colli,
+      notes: data.notes?.trim() || "",
+      confidence: 1,
+    },
+    attachmentUrl: data.attachmentUrl || null,
+    attachmentStoragePath: data.attachmentStoragePath || null,
+    holdingPhotoUrls: data.holdingPhotoUrls?.length
+      ? data.holdingPhotoUrls
+      : undefined,
+    holdingPhotoStoragePaths: data.holdingPhotoStoragePaths?.length
+      ? data.holdingPhotoStoragePaths
+      : undefined,
+    createdAt: now,
+  };
+
+  const unit: Unit = {
+    id: uuid(),
+    orderId,
+    shipmentId: shipment.id,
+    locationId: placed && locId ? locId : null,
+    occupiesEntireRack: occupyAll,
+    slotSpan: occupyAll ? "full" : span,
+    slotHalf: occupyAll ? null : half,
+    footprintW: occupyAll ? null : fpW ?? (span === "half" ? 0.55 : 1.1),
+    footprintD: occupyAll ? null : fpD ?? BAY_DEPTH_M,
+    footprintOffsetX: occupyAll ? null : fpX ?? 0,
+    footprintOffsetZ: occupyAll ? null : fpZ ?? 0,
+    floorAreaId: placed && floorId ? floorId : null,
+    kind: "box",
+    indexInSet: idx,
+    totalInSet: idx,
+    qrToken: uuid().replace(/-/g, "").slice(0, 16),
+    labelTitle: order.project || order.orderCode || "Siunta",
+    status: placed ? "stored" : "received",
+    notes: data.notes?.trim() || "",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  let floorAreas = state.floorAreas;
+  if (placed && floorId) {
+    floorAreas = floorAreas.map((f) =>
+      f.id === floorId ? { ...f, orderId } : f,
+    );
+  }
+
+  const next = {
+    ...state,
+    shipments: [shipment, ...state.shipments],
+    units: [
+      ...state.units.map((u) =>
+        u.orderId === orderId ? { ...u, totalInSet: idx } : u,
+      ),
+      unit,
+    ],
+    floorAreas,
+    orders: state.orders.map((o) =>
+      o.id === orderId ? { ...o, updatedAt: now } : o,
+    ),
+  };
+  saveState(next);
+  return { state: next, placed, conflict, unitId: unit.id };
+}
+
+function ensureShipmentForOrder(state: AppState, orderId: string): {
+  state: AppState;
+  shipmentId: string;
+} {
+  const existing = latestShipmentForOrder(state, orderId);
+  if (existing) return { state, shipmentId: existing.id };
+  const order = state.orders.find((o) => o.id === orderId);
+  const now = new Date().toISOString();
+  const shipment: Shipment = {
+    id: uuid(),
+    orderId,
+    status: "arrived",
+    carrier: "",
+    expectedAt: null,
+    arrivedAt: now,
+    palletCount: null,
+    boxCount: 1,
+    notes: "",
+    documentName: null,
+    parsedJson: {
+      source: "map-assign",
+      orderCode: order?.orderCode || "",
+      project: order?.project || "",
+      client: order?.client || "",
+      lines: [],
+      colliHint: 1,
+      notes: "",
+      confidence: 1,
+    },
+    createdAt: now,
+  };
+  const next = {
+    ...state,
+    shipments: [shipment, ...state.shipments],
+  };
+  saveState(next);
+  return { state: next, shipmentId: shipment.id };
+}
+
 /** Laukiamas atvykimas — be užsakymo, tik užrašas + optional PDF (prie lenta) */
 export function createExpectedArrival(
   state: AppState,
@@ -1378,13 +1601,12 @@ export function assignOrderToShelf(
     });
   }
 
-  const shipment =
-    state.shipments.find((s) => s.orderId === orderId) ?? null;
+  const ensured = ensureShipmentForOrder(state, orderId);
   const idx = orderUnits.length + 1;
   const unit: Unit = {
     id: uuid(),
     orderId,
-    shipmentId: shipment?.id ?? null,
+    shipmentId: ensured.shipmentId,
     locationId: opts.locationId,
     occupiesEntireRack: false,
     slotSpan: span,
@@ -1405,9 +1627,9 @@ export function assignOrderToShelf(
     updatedAt: now,
   };
   const next = {
-    ...state,
+    ...ensured.state,
     units: [
-      ...state.units.map((u) =>
+      ...ensured.state.units.map((u) =>
         u.orderId === orderId ? { ...u, totalInSet: idx } : u,
       ),
       unit,
@@ -1448,13 +1670,12 @@ export function assignOrderToFloor(
     });
   }
 
-  const shipment =
-    state.shipments.find((s) => s.orderId === orderId) ?? null;
+  const ensured = ensureShipmentForOrder(state, orderId);
   const idx = orderUnits.length + 1;
   const unit: Unit = {
     id: uuid(),
     orderId,
-    shipmentId: shipment?.id ?? null,
+    shipmentId: ensured.shipmentId,
     locationId: null,
     occupiesEntireRack: false,
     slotSpan: "full",
@@ -1475,14 +1696,14 @@ export function assignOrderToFloor(
     updatedAt: now,
   };
   const next = {
-    ...state,
+    ...ensured.state,
     units: [
-      ...state.units.map((u) =>
+      ...ensured.state.units.map((u) =>
         u.orderId === orderId ? { ...u, totalInSet: idx } : u,
       ),
       unit,
     ],
-    floorAreas: state.floorAreas.map((f) =>
+    floorAreas: ensured.state.floorAreas.map((f) =>
       f.id === floorAreaId ? { ...f, orderId } : f,
     ),
   };

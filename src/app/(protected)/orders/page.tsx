@@ -30,7 +30,7 @@ export default function OrdersPage() {
           />
         </div>
         <Link href="/map?new=1" className="btn-primary w-full sm:w-auto">
-          + Naujas atvykimas
+          Registruoti
         </Link>
       </div>
 

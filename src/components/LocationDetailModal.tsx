@@ -12,7 +12,6 @@ import {
   deleteOrder,
   issueUnitToClient,
   loadState,
-  restoreOrderFromArchive,
   unplaceUnit,
   unitsAtLocation,
   unitsOnFloorArea,
@@ -36,6 +35,7 @@ export function LocationDetailModal({
   const state = useWms();
   const router = useRouter();
   const [showEdit, setShowEdit] = useState(false);
+  const [showMore, setShowMore] = useState(false);
 
   const units = useMemo(() => {
     if (!pick) return [];
@@ -99,8 +99,158 @@ export function LocationDetailModal({
     return "";
   }
 
+  function footer() {
+    if (!pick) return null;
+    const moreBtn = (
+      <button
+        type="button"
+        className="btn-secondary"
+        onClick={() => setShowMore((v) => !v)}
+      >
+        {showMore ? "Slėpti" : "Daugiau"}
+      </button>
+    );
+
+    if (units.length === 0) {
+      return (
+        <div className="modal-footer-actions">
+          {onLegacyOrder && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => onLegacyOrder(pick)}
+            >
+              Žymėti čia
+            </button>
+          )}
+          {moreBtn}
+          {showMore && (
+            <>
+              {onCreateOrder && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => onCreateOrder(pick)}
+                >
+                  Registruoti
+                </button>
+              )}
+              {pick.kind === "floor" && (
+                <button
+                  type="button"
+                  className="btn-danger"
+                  onClick={() => {
+                    if (!confirm("Ištrinti šį plotą ant grindų?")) return;
+                    deleteFloorArea(loadState(), pick.code);
+                    onClose();
+                  }}
+                >
+                  Ištrinti plotą
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      );
+    }
+
+    if (!primaryUnit || !primaryOrder) return null;
+
+    return (
+      <div className="modal-footer-actions">
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => {
+            onClose();
+            if (onMoveUnit) {
+              onMoveUnit(primaryUnit.id);
+            } else {
+              router.push(
+                `/map?move=${primaryUnit.id}&hint=1&label=${encodeURIComponent(primaryUnit.labelTitle)}`,
+              );
+            }
+          }}
+        >
+          Perkelti
+        </button>
+        <Link
+          href={`/orders/${primaryOrder.id}`}
+          className="btn-secondary"
+          onClick={onClose}
+        >
+          Užsakymas
+        </Link>
+        {moreBtn}
+        {showMore && (
+          <>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                const name =
+                  prompt("Kas atsiėmė? (vardas ar įmonė)") || "Klientas";
+                issueUnitToClient(loadState(), primaryUnit.id, name);
+                onClose();
+              }}
+            >
+              Klientas atsiėmė
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setShowEdit((v) => !v)}
+            >
+              {showEdit ? "Slėpti redagavimą" : "Keisti informaciją"}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                if (
+                  !confirm(
+                    "Nuimti prekę iš šios vietos? Užsakymas liks — vėliau galėsi padėti kitur.",
+                  )
+                )
+                  return;
+                unplaceUnit(loadState(), primaryUnit.id);
+              }}
+            >
+              Nuimti iš vietos
+            </button>
+            <button
+              type="button"
+              className="btn-danger"
+              onClick={() => {
+                if (
+                  !confirm(
+                    "Ištrinti visą užsakymą ir visas dėžes? Atgal neatstatysi.",
+                  )
+                )
+                  return;
+                deleteOrder(loadState(), primaryOrder.id);
+                onClose();
+              }}
+            >
+              Ištrinti užsakymą
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <Modal open={!!pick} title="Vieta" onClose={onClose}>
+    <Modal
+      open={!!pick}
+      title="Vieta"
+      onClose={() => {
+        setShowMore(false);
+        setShowEdit(false);
+        onClose();
+      }}
+      footer={footer()}
+    >
       {pick && (
         <div className="space-y-4">
           <div className="rounded-xl bg-stone-900 px-4 py-3 text-white">
@@ -191,126 +341,6 @@ export function LocationDetailModal({
               )}
             </>
           )}
-
-          <div className="modal-actions mt-2">
-            {units.length === 0 && (
-              <>
-                {onLegacyOrder && (
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={() => onLegacyOrder(pick)}
-                  >
-                    Žymėti čia
-                  </button>
-                )}
-                {onCreateOrder && (
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => onCreateOrder(pick)}
-                  >
-                    Naujas atvykimas
-                  </button>
-                )}
-                {pick.kind === "floor" && (
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => {
-                      if (!confirm("Ištrinti šį plotą ant grindų?")) return;
-                      deleteFloorArea(loadState(), pick.code);
-                      onClose();
-                    }}
-                  >
-                    Ištrinti plotą
-                  </button>
-                )}
-              </>
-            )}
-
-            {primaryUnit && primaryOrder && (
-              <>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => {
-                    const name =
-                      prompt("Kas atsiėmė? (vardas ar įmonė)") || "Klientas";
-                    issueUnitToClient(loadState(), primaryUnit.id, name);
-                    onClose();
-                  }}
-                >
-                  Klientas atsiėmė
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => {
-                    onClose();
-                    if (onMoveUnit) {
-                      onMoveUnit(primaryUnit.id);
-                    } else {
-                      router.push(
-                        `/map?move=${primaryUnit.id}&hint=1&label=${encodeURIComponent(primaryUnit.labelTitle)}`,
-                      );
-                    }
-                  }}
-                >
-                  Perkelti kitur
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowEdit((v) => !v)}
-                >
-                  {showEdit ? "Slėpti redagavimą" : "Keisti informaciją"}
-                </button>
-                <Link
-                  href={`/orders/${primaryOrder.id}`}
-                  className="btn-secondary"
-                  onClick={onClose}
-                >
-                  Atidaryti užsakymą
-                </Link>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => {
-                    if (
-                      !confirm(
-                        "Nuimti prekę iš šios vietos? Užsakymas liks — vėliau galėsi padėti kitur.",
-                      )
-                    )
-                      return;
-                    unplaceUnit(loadState(), primaryUnit.id);
-                  }}
-                >
-                  Nuimti iš vietos
-                </button>
-                <button
-                  type="button"
-                  className="btn-danger"
-                  onClick={() => {
-                    if (
-                      !confirm(
-                        "Ištrinti visą užsakymą ir visas dėžes? Atgal neatstatysi.",
-                      )
-                    )
-                      return;
-                    deleteOrder(loadState(), primaryOrder.id);
-                    onClose();
-                  }}
-                >
-                  Ištrinti užsakymą
-                </button>
-              </>
-            )}
-
-            <button type="button" className="btn-secondary" onClick={onClose}>
-              Uždaryti
-            </button>
-          </div>
         </div>
       )}
     </Modal>

@@ -188,6 +188,31 @@ textarea:focus,
   width: 100%;
 }
 
+.modal-footer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.modal-footer-actions .btn-primary,
+.modal-footer-actions .btn-secondary,
+.modal-footer-actions .btn-danger {
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .modal-footer-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .modal-footer-actions .btn-primary,
+  .modal-footer-actions .btn-secondary,
+  .modal-footer-actions .btn-danger {
+    width: auto;
+  }
+}
+
 .page-mobile-stack {
   display: flex;
   flex-direction: column;

@@ -7,12 +7,14 @@ export function Modal({
   onClose,
   title,
   children,
+  footer,
   wide,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  footer?: ReactNode;
   wide?: boolean;
 }) {
   useEffect(() => {
@@ -59,9 +61,14 @@ export function Modal({
             Uždaryti
           </button>
         </div>
-        <div className="overflow-y-auto overscroll-contain px-4 py-4 pb-2 sm:px-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 pb-2 sm:px-5">
           {children}
         </div>
+        {footer ? (
+          <div className="modal-footer shrink-0 border-t border-stone-200 bg-white px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
+            {footer}
+          </div>
+        ) : null}
       </div>
     </div>
   );
