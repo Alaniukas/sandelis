@@ -346,6 +346,30 @@ function pruneEmptyFloorAreas(state: AppState): AppState {
   return { ...state, floorAreas };
 }
 
+/**
+ * Registruotas užsakymas / padėta prekė neturi likti „Laukiami atvykimai“.
+ * Ten tik įrašai be užsakymo (mygtukas „Laukia“).
+ */
+function migrateRegisteredExpectedShipments(state: AppState): AppState {
+  const now = new Date().toISOString();
+  let changed = false;
+  const shipments = state.shipments.map((s) => {
+    if (s.status !== "expected") return s;
+    const unitPlaced = state.units.some(
+      (u) =>
+        u.shipmentId === s.id &&
+        (u.locationId || u.floorAreaId) &&
+        u.status !== "issued" &&
+        u.status !== "archived",
+    );
+    if (!s.orderId && !unitPlaced) return s;
+    changed = true;
+    return { ...s, status: "arrived" as const, arrivedAt: s.arrivedAt || now };
+  });
+  if (!changed) return state;
+  return { ...state, shipments };
+}
+
 function applyDataMigrations(state: AppState): AppState {
   let s = state;
   s = mergeMissingLocations(s);
@@ -354,7 +378,7 @@ function applyDataMigrations(state: AppState): AppState {
   s = purgeSeedFloorAreas(s);
   s = migrateShipmentAttachments(s);
   s = migrateRackLevelUnits(s);
-  s = pruneEmptyFloorAreas(s);
+  s = migrateRegisteredExpectedShipments(s);
   return s;
 }
 
@@ -385,6 +409,9 @@ export function loadState(): AppState {
       return empty();
     }
     let parsed = JSON.parse(raw) as AppState;
+    const expectedBefore = (parsed.shipments ?? []).filter(
+      (s) => s.status === "expected",
+    ).length;
     parsed = normalizeState(parsed);
     parsed.orders = parsed.orders.map((o) => ({
       ...o,
@@ -397,13 +424,25 @@ export function loadState(): AppState {
     } catch {
       /* ignore */
     }
+    const expectedAfter = parsed.shipments.filter(
+      (s) => s.status === "expected",
+    ).length;
+    if (expectedAfter < expectedBefore) {
+      void import("./wms-sync").then((m) => {
+        m.markLocalDirty();
+        m.scheduleWmsSync(parsed);
+      });
+    }
     return parsed;
   } catch {
     return empty();
   }
 }
 
+import { isWmsWriteEnabled } from "./wms-write-guard";
+
 export function saveState(state: AppState) {
+  if (!isWmsWriteEnabled()) return;
   localStorage.setItem(KEY, JSON.stringify(state));
   window.dispatchEvent(new Event("wms-updated"));
   if (typeof window !== "undefined") {
@@ -468,10 +507,10 @@ export function createOrderFromParsed(
   const shipment: Shipment = {
     id: uuid(),
     orderId: order.id,
-    status: place?.placeNow ? "arrived" : "expected",
+    status: "arrived",
     carrier: "",
     expectedAt: null,
-    arrivedAt: place?.placeNow ? now : null,
+    arrivedAt: now,
     palletCount: null,
     boxCount: colli,
     notes: "",
@@ -515,7 +554,7 @@ export function createOrderFromParsed(
       totalInSet: Math.max(1, colli),
       qrToken: uuid().replace(/-/g, "").slice(0, 16),
       labelTitle: doc.project || doc.orderCode || doc.client || "Siunta",
-      status: (placeNow ? "stored" : "expected") as UnitStatus,
+      status: (placeNow ? "stored" : "received") as UnitStatus,
       notes: doc.lines.map((l) => `${l.name} ×${l.qty}`).join("; "),
       createdAt: now,
       updatedAt: now,
@@ -812,7 +851,7 @@ export function createExpectedArrival(
   return next;
 }
 
-/** Pašalinti laukiamą atvykimą (be susietų dėžių) */
+/** Pašalinti laukiamą atvykimą. Jei jau yra dėžės — tik išimti iš eilės. */
 export function deleteExpectedArrival(
   state: AppState,
   shipmentId: string,
@@ -820,7 +859,9 @@ export function deleteExpectedArrival(
   const shipment = state.shipments.find((s) => s.id === shipmentId);
   if (!shipment || shipment.status !== "expected") return state;
   const hasUnits = state.units.some((u) => u.shipmentId === shipmentId);
-  if (hasUnits) return state;
+  if (hasUnits || shipment.orderId) {
+    return completeExpectedArrival(state, shipmentId);
+  }
   const next = {
     ...state,
     shipments: state.shipments.filter((s) => s.id !== shipmentId),
@@ -1297,13 +1338,22 @@ export function getOrCreateFloorAreaForDraft(
     notes?: string;
   },
 ): { state: AppState; area: FloorArea } {
-  const existing = findOverlappingFloorArea(
+  const overlap = findOverlappingFloorArea(
     state,
     draft.x,
     draft.z,
     draft.w,
     draft.d,
   );
+  const occupied =
+    !!overlap &&
+    state.units.some(
+      (u) =>
+        u.floorAreaId === overlap.id &&
+        u.status !== "issued" &&
+        u.status !== "archived",
+    );
+  const existing = overlap && !occupied ? overlap : null;
   if (existing) {
     const label = draft.label?.trim();
     const notes = draft.notes?.trim();
@@ -1468,6 +1518,17 @@ export function receiveShipment(
   return next;
 }
 
+function markOrderShipmentsArrived(state: AppState, orderId: string): AppState {
+  const now = new Date().toISOString();
+  let changed = false;
+  const shipments = state.shipments.map((s) => {
+    if (s.orderId !== orderId || s.status !== "expected") return s;
+    changed = true;
+    return { ...s, status: "arrived" as const, arrivedAt: s.arrivedAt || now };
+  });
+  return changed ? { ...state, shipments } : state;
+}
+
 export function placeUnit(
   state: AppState,
   unitId: string,
@@ -1486,31 +1547,34 @@ export function placeUnit(
   const now = new Date().toISOString();
   const span = opts?.slotSpan ?? "full";
   const noteText = opts?.notes?.trim();
-  const next = {
-    ...state,
-    units: state.units.map((u) =>
-      u.id === unitId
-        ? {
-            ...u,
-            locationId,
-            floorAreaId: null,
-            occupiesEntireRack: opts?.occupiesEntireRack ?? u.occupiesEntireRack,
-            slotSpan: opts?.occupiesEntireRack ? "full" : span,
-            slotHalf:
-              opts?.occupiesEntireRack || span === "full"
-                ? null
-                : (opts?.slotHalf ?? "L"),
-            footprintW: opts?.footprintW ?? u.footprintW,
-            footprintD: opts?.footprintD ?? u.footprintD,
-            footprintOffsetX: opts?.footprintOffsetX ?? u.footprintOffsetX,
-            footprintOffsetZ: opts?.footprintOffsetZ ?? u.footprintOffsetZ,
-            notes: noteText || u.notes,
-            status: "stored" as UnitStatus,
-            updatedAt: now,
-          }
-        : u,
-    ),
-  };
+  const next = markOrderShipmentsArrived(
+    {
+      ...state,
+      units: state.units.map((u) =>
+        u.id === unitId
+          ? {
+              ...u,
+              locationId,
+              floorAreaId: null,
+              occupiesEntireRack: opts?.occupiesEntireRack ?? u.occupiesEntireRack,
+              slotSpan: opts?.occupiesEntireRack ? "full" : span,
+              slotHalf:
+                opts?.occupiesEntireRack || span === "full"
+                  ? null
+                  : (opts?.slotHalf ?? "L"),
+              footprintW: opts?.footprintW ?? u.footprintW,
+              footprintD: opts?.footprintD ?? u.footprintD,
+              footprintOffsetX: opts?.footprintOffsetX ?? u.footprintOffsetX,
+              footprintOffsetZ: opts?.footprintOffsetZ ?? u.footprintOffsetZ,
+              notes: noteText || u.notes,
+              status: "stored" as UnitStatus,
+              updatedAt: now,
+            }
+          : u,
+      ),
+    },
+    state.units.find((u) => u.id === unitId)?.orderId ?? "",
+  );
   saveState(next);
   return next;
 }
@@ -1524,33 +1588,36 @@ export function placeUnitOnFloor(
   const now = new Date().toISOString();
   const unit = state.units.find((u) => u.id === unitId);
   const noteText = opts?.notes?.trim();
-  const next = {
-    ...state,
-    units: state.units.map((u) =>
-      u.id === unitId
-        ? {
-            ...u,
-            locationId: null,
-            floorAreaId,
-            occupiesEntireRack: false,
-            slotSpan: "full" as const,
-            slotHalf: null,
-            footprintW: null,
-            footprintD: null,
-            footprintOffsetX: null,
-            footprintOffsetZ: null,
-            notes: noteText || u.notes,
-            status: "stored" as UnitStatus,
-            updatedAt: now,
-          }
-        : u,
-    ),
-    floorAreas: state.floorAreas.map((f) =>
-      f.id === floorAreaId
-        ? { ...f, orderId: unit?.orderId ?? f.orderId }
-        : f,
-    ),
-  };
+  const next = markOrderShipmentsArrived(
+    {
+      ...state,
+      units: state.units.map((u) =>
+        u.id === unitId
+          ? {
+              ...u,
+              locationId: null,
+              floorAreaId,
+              occupiesEntireRack: false,
+              slotSpan: "full" as const,
+              slotHalf: null,
+              footprintW: null,
+              footprintD: null,
+              footprintOffsetX: null,
+              footprintOffsetZ: null,
+              notes: noteText || u.notes,
+              status: "stored" as UnitStatus,
+              updatedAt: now,
+            }
+          : u,
+      ),
+      floorAreas: state.floorAreas.map((f) =>
+        f.id === floorAreaId
+          ? { ...f, orderId: unit?.orderId ?? f.orderId }
+          : f,
+      ),
+    },
+    unit?.orderId ?? "",
+  );
   saveState(next);
   return next;
 }
@@ -1626,15 +1693,18 @@ export function assignOrderToShelf(
     createdAt: now,
     updatedAt: now,
   };
-  const next = {
-    ...ensured.state,
-    units: [
-      ...ensured.state.units.map((u) =>
-        u.orderId === orderId ? { ...u, totalInSet: idx } : u,
-      ),
-      unit,
-    ],
-  };
+  const next = markOrderShipmentsArrived(
+    {
+      ...ensured.state,
+      units: [
+        ...ensured.state.units.map((u) =>
+          u.orderId === orderId ? { ...u, totalInSet: idx } : u,
+        ),
+        unit,
+      ],
+    },
+    orderId,
+  );
   saveState(next);
   return next;
 }
@@ -1695,18 +1765,21 @@ export function assignOrderToFloor(
     createdAt: now,
     updatedAt: now,
   };
-  const next = {
-    ...ensured.state,
-    units: [
-      ...ensured.state.units.map((u) =>
-        u.orderId === orderId ? { ...u, totalInSet: idx } : u,
+  const next = markOrderShipmentsArrived(
+    {
+      ...ensured.state,
+      units: [
+        ...ensured.state.units.map((u) =>
+          u.orderId === orderId ? { ...u, totalInSet: idx } : u,
+        ),
+        unit,
+      ],
+      floorAreas: ensured.state.floorAreas.map((f) =>
+        f.id === floorAreaId ? { ...f, orderId } : f,
       ),
-      unit,
-    ],
-    floorAreas: ensured.state.floorAreas.map((f) =>
-      f.id === floorAreaId ? { ...f, orderId } : f,
-    ),
-  };
+    },
+    orderId,
+  );
   saveState(next);
   return next;
 }
@@ -1802,6 +1875,7 @@ export function issueUnitToClient(
   state: AppState,
   unitId: string,
   recipientName: string,
+  proof?: { photoUrls?: string[] },
 ): AppState | null {
   const unit = state.units.find((u) => u.id === unitId);
   if (!unit || unit.status === "issued" || unit.status === "archived") {
@@ -1823,6 +1897,7 @@ export function issueUnitToClient(
     notes: loc ? `Vieta ${loc.code}` : "",
     unitIds: [unit.id],
     unitPlacements: [placement],
+    photoUrls: proof?.photoUrls?.filter(Boolean),
     issuedAt: now,
   };
 
@@ -2479,7 +2554,7 @@ export function getDashboardSummary(state: AppState): DashboardSummary {
   }
 
   const arrivals: DashboardArrival[] = state.shipments
-    .filter((s) => s.status === "expected")
+    .filter((s) => s.status === "expected" && !s.orderId)
     .map((s) => {
       const order = s.orderId
         ? state.orders.find((o) => o.id === s.orderId)

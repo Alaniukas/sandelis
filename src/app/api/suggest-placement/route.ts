@@ -8,7 +8,7 @@ import type { AppState, Zone } from "@/lib/types";
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const auth = await requireApiUser();
+  const auth = await requireApiUser({ write: true });
   if (auth.response) return auth.response;
 
   try {

@@ -40,6 +40,7 @@ if (found) {
     password,
     email_confirm: true,
     user_metadata: { username, app: "sandelio-wms" },
+    app_metadata: { wms_role: "editor" },
   });
   if (error) {
     console.error("Atnaujinti nepavyko:", error.message);
@@ -54,6 +55,7 @@ const { error } = await admin.auth.admin.createUser({
   password,
   email_confirm: true,
   user_metadata: { username, app: "sandelio-wms" },
+  app_metadata: { wms_role: "editor" },
 });
 
 if (error) {

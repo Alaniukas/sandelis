@@ -11,7 +11,7 @@ import type { Order, Unit } from "@/lib/types";
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const auth = await requireApiUser();
+  const auth = await requireApiUser({ write: true });
   if (auth.response) return auth.response;
 
   const body = await req.json();  const { order, units, appUrl, arrivedAt } = body as {

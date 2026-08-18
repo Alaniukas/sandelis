@@ -10,6 +10,7 @@ import { NavTabIcon, type NavTabId } from "@/components/NavTabIcons";
 import { signOut } from "@/lib/supabase/logout";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { PlacementSuggestion } from "@/lib/placement";
+import { useWmsAccess } from "@/components/WmsAccessProvider";
 
 const tabs: {
   href: string;
@@ -64,6 +65,7 @@ export function MobileBottomNav() {
   const [newOpen, setNewOpen] = useState(false);
   const [incomingOpen, setIncomingOpen] = useState(false);
   const [holdingOpen, setHoldingOpen] = useState(false);
+  const { readOnly } = useWmsAccess();
 
   function onShowPlacement(s: PlacementSuggestion) {
     router.push(
@@ -97,8 +99,14 @@ export function MobileBottomNav() {
           />
           <div className="absolute inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl">
             <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
-              Greiti veiksmai
+              {readOnly ? "Peržiūra" : "Greiti veiksmai"}
             </p>
+            {readOnly ? (
+              <p className="px-4 py-2 text-sm text-stone-600">
+                Ši paskyra tik žiūri — keisti sandėlio negalima.
+              </p>
+            ) : (
+              <>
             <button
               type="button"
               className="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-sm font-semibold text-stone-900 active:bg-stone-100"
@@ -154,6 +162,8 @@ export function MobileBottomNav() {
                 </span>
               </span>
             </button>
+              </>
+            )}
             <Link
               href="/archive"
               className="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-sm font-medium text-stone-600 active:bg-stone-100"

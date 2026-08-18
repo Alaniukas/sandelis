@@ -9,6 +9,7 @@ import { NewShipmentModal } from "@/components/NewShipmentModal";
 import { signOut } from "@/lib/supabase/logout";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { PlacementSuggestion } from "@/lib/placement";
+import { useWmsAccess } from "@/components/WmsAccessProvider";
 
 const links = [
   { href: "/", label: "Pradžia" },
@@ -24,6 +25,7 @@ export function AppNav() {
   const [newOpen, setNewOpen] = useState(false);
   const [incomingOpen, setIncomingOpen] = useState(false);
   const [holdingOpen, setHoldingOpen] = useState(false);
+  const { readOnly } = useWmsAccess();
 
   function onShowPlacement(s: PlacementSuggestion) {
     router.push(
@@ -87,6 +89,12 @@ export function AppNav() {
           </nav>
 
           <div className="ml-auto hidden items-center gap-2 md:flex">
+            {readOnly ? (
+              <span className="rounded-full bg-stone-200/80 px-3 py-1.5 text-xs font-medium text-stone-600">
+                Tik peržiūra
+              </span>
+            ) : (
+              <>
             <button
               type="button"
               className="btn-primary !rounded-full !px-3.5 !py-1.5 !text-xs"
@@ -114,6 +122,8 @@ export function AppNav() {
             >
               Laukia
             </button>
+              </>
+            )}
             {isSupabaseConfigured() && (
               <button
                 type="button"

@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 const BUCKET = "wms-attachments";
 
 export async function POST(req: Request) {
-  const auth = await requireApiUser();
+  const auth = await requireApiUser({ write: true });
   if (auth.response) return auth.response;
 
   const supabase = await createClient();

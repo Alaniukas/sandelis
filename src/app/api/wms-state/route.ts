@@ -34,7 +34,7 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
-  const auth = await requireApiUser();
+  const auth = await requireApiUser({ write: true });
   if (auth.response) return auth.response;
 
   const supabase = await createClient();

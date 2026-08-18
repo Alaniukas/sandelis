@@ -1,6 +1,7 @@
 "use client";
 
 import type { AppState } from "./types";
+import { isWmsWriteEnabled } from "./wms-write-guard";
 
 const SYNC_DEBOUNCE_MS = 400;
 const SYNC_META_KEY = "sandelio-wms-sync-meta";
@@ -83,6 +84,7 @@ export async function pullWmsState(): Promise<{
 
 export function scheduleWmsSync(state: AppState) {
   if (typeof window === "undefined") return;
+  if (!isWmsWriteEnabled()) return;
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
     syncTimer = null;
@@ -91,6 +93,7 @@ export function scheduleWmsSync(state: AppState) {
 }
 
 export async function pushWmsStateNow(state: AppState) {
+  if (!isWmsWriteEnabled()) return;
   if (syncTimer) {
     clearTimeout(syncTimer);
     syncTimer = null;

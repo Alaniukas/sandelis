@@ -3,13 +3,11 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { patchSupabaseCookieOptions } from "@/lib/supabase/cookie-options";
 import { getSupabaseEnv } from "@/lib/supabase/env";
-import { getAuthEmail, usernameMatches } from "@/lib/supabase/username-auth";
+import { resolveAuthAccount } from "@/lib/supabase/username-auth";
 
 export async function POST(request: Request) {
   const env = getSupabaseEnv();
-  const authEmail = getAuthEmail();
-
-  if (!env || !authEmail) {
+  if (!env) {
     return NextResponse.json(
       { error: "Auth not configured" },
       { status: 503 },
@@ -25,8 +23,9 @@ export async function POST(request: Request) {
 
   const username = body.username?.trim() ?? "";
   const password = body.password ?? "";
+  const account = resolveAuthAccount(username);
 
-  if (!username || !password || !usernameMatches(username)) {
+  if (!username || !password || !account) {
     return NextResponse.json(
       { error: "Invalid credentials" },
       { status: 401 },
@@ -34,7 +33,7 @@ export async function POST(request: Request) {
   }
 
   const cookieStore = await cookies();
-  let response = NextResponse.json({ ok: true });
+  let response = NextResponse.json({ ok: true, role: account.role });
 
   const supabase = createServerClient(env.url, env.anonKey, {
     cookies: {
@@ -45,7 +44,7 @@ export async function POST(request: Request) {
         for (const { name, value, options } of cookiesToSet) {
           cookieStore.set(name, value, patchSupabaseCookieOptions(options));
         }
-        response = NextResponse.json({ ok: true });
+        response = NextResponse.json({ ok: true, role: account.role });
         for (const { name, value, options } of cookiesToSet) {
           response.cookies.set(
             name,
@@ -58,7 +57,7 @@ export async function POST(request: Request) {
   });
 
   const { error } = await supabase.auth.signInWithPassword({
-    email: authEmail,
+    email: account.email,
     password,
   });
 
@@ -69,7 +68,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // Užtikrina, kad sesijos slapukai būtų įrašyti į atsakymą
   await supabase.auth.getSession();
 
   return response;

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import type { PickInfo } from "@/components/Warehouse3D";
 import { OrderEditSection } from "@/components/OrderEditSection";
 import { OrderInfoSection } from "@/components/OrderInfoSection";
+import { uploadAttachment } from "@/lib/attachments";
 import {
   deleteFloorArea,
   deleteOrder,
@@ -18,6 +19,8 @@ import {
 } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
 import { unitStatusLabel, zoneLabel } from "@/lib/ui-labels";
+import { pushWmsStateNow } from "@/lib/wms-sync";
+import { useWmsAccess } from "@/components/WmsAccessProvider";
 
 export function LocationDetailModal({
   pick,
@@ -36,6 +39,24 @@ export function LocationDetailModal({
   const router = useRouter();
   const [showEdit, setShowEdit] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [recipient, setRecipient] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [issueError, setIssueError] = useState("");
+  const [issueBusy, setIssueBusy] = useState(false);
+  const { readOnly } = useWmsAccess();
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setIssueOpen(false);
+    setRecipient("");
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    setIssueError("");
+    setIssueBusy(false);
+  }, [pick]);
 
   const units = useMemo(() => {
     if (!pick) return [];
@@ -99,8 +120,57 @@ export function LocationDetailModal({
     return "";
   }
 
+  async function confirmIssue() {
+    if (!primaryUnit) return;
+    const name = recipient.trim();
+    if (!name) {
+      setIssueError("Įrašyk, kas atsiėmė");
+      return;
+    }
+    if (!photoFile) {
+      setIssueError("Nufotografuok atsiėmimą");
+      return;
+    }
+    setIssueBusy(true);
+    setIssueError("");
+    const uploaded = await uploadAttachment(photoFile);
+    if (!uploaded.storageUrl) {
+      setIssueBusy(false);
+      setIssueError(uploaded.error || "Nepavyko įkelti nuotraukos");
+      return;
+    }
+    const next = issueUnitToClient(loadState(), primaryUnit.id, name, {
+      photoUrls: [uploaded.storageUrl],
+    });
+    if (next) {
+      try {
+        await pushWmsStateNow(next);
+      } catch {
+        /* local saved */
+      }
+    }
+    setIssueBusy(false);
+    onClose();
+  }
+
   function footer() {
     if (!pick) return null;
+    if (readOnly) {
+      if (primaryOrder) {
+        return (
+          <div className="modal-footer-actions">
+            <Link
+              href={`/orders/${primaryOrder.id}`}
+              className="btn-secondary"
+              onClick={onClose}
+            >
+              Užsakymas
+            </Link>
+          </div>
+        );
+      }
+      return null;
+    }
     const moreBtn = (
       <button
         type="button"
@@ -188,10 +258,8 @@ export function LocationDetailModal({
               type="button"
               className="btn-secondary"
               onClick={() => {
-                const name =
-                  prompt("Kas atsiėmė? (vardas ar įmonė)") || "Klientas";
-                issueUnitToClient(loadState(), primaryUnit.id, name);
-                onClose();
+                setIssueOpen(true);
+                setShowMore(true);
               }}
             >
               Klientas atsiėmė
@@ -338,6 +406,94 @@ export function LocationDetailModal({
 
               {primaryOrder && showEdit && (
                 <OrderEditSection orderId={primaryOrder.id} />
+              )}
+
+              {issueOpen && primaryUnit && (
+                <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                  <h3 className="section-label">Klientas atsiėmė</h3>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium text-stone-700">
+                      Kas pasiėmė?
+                    </span>
+                    <input
+                      className="field"
+                      placeholder="Vardas, įmonė, vežėjas…"
+                      value={recipient}
+                      onChange={(e) => setRecipient(e.target.value)}
+                    />
+                  </label>
+                  <div>
+                    <span className="mb-1 block text-sm font-medium text-stone-700">
+                      Nuotrauka
+                    </span>
+                    <input
+                      ref={cameraRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] ?? null;
+                        setPhotoFile(file);
+                        setPhotoPreview(
+                          file ? URL.createObjectURL(file) : null,
+                        );
+                        e.target.value = "";
+                      }}
+                    />
+                    <input
+                      ref={galleryRef}
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] ?? null;
+                        setPhotoFile(file);
+                        setPhotoPreview(
+                          file ? URL.createObjectURL(file) : null,
+                        );
+                        e.target.value = "";
+                      }}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        className="flex min-h-12 items-center justify-center rounded-xl border-2 border-dashed border-stone-300 bg-white px-3 py-3 text-sm font-semibold text-stone-800"
+                        onClick={() => cameraRef.current?.click()}
+                      >
+                        Fotografuoti
+                      </button>
+                      <button
+                        type="button"
+                        className="flex min-h-12 items-center justify-center rounded-xl border-2 border-dashed border-stone-300 bg-white px-3 py-3 text-sm font-semibold text-stone-800"
+                        onClick={() => galleryRef.current?.click()}
+                      >
+                        Iš galerijos
+                      </button>
+                    </div>
+                    {photoPreview && (
+                      <div className="mt-2 overflow-hidden rounded-xl border">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={photoPreview}
+                          alt=""
+                          className="max-h-40 w-full object-cover"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  {issueError && (
+                    <p className="text-sm text-red-700">{issueError}</p>
+                  )}
+                  <button
+                    type="button"
+                    className="btn-primary w-full"
+                    disabled={issueBusy}
+                    onClick={() => void confirmIssue()}
+                  >
+                    {issueBusy ? "Saugoma…" : "Pažymėti: pasiėmė"}
+                  </button>
+                </section>
               )}
             </>
           )}

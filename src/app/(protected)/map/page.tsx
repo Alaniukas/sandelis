@@ -24,6 +24,7 @@ import {
 import type { PlacementSuggestion } from "@/lib/placement";
 import {
   footprintConflictsAtLocation,
+  getOrCreateFloorAreaForDraft,
   loadState,
   moveUnitToLocation,
   rackFullyOccupiedByUnit,
@@ -31,6 +32,7 @@ import {
 } from "@/lib/demo-store";
 import { BAY_DEPTH_M, locationCode } from "@/lib/locations";
 import { formatLocationHuman } from "@/lib/ui-labels";
+import { useWmsAccess } from "@/components/WmsAccessProvider";
 
 const Warehouse3D = dynamic(
   () => import("@/components/Warehouse3D").then((m) => m.Warehouse3D),
@@ -65,6 +67,7 @@ type PendingMapFocus = {
 
 function MapInner() {
   const state = useWms();
+  const { readOnly } = useWmsAccess();
   const params = useSearchParams();
   const router = useRouter();
   const [pick, setPick] = useState<PickInfo | null>(null);
@@ -228,6 +231,7 @@ function MapInner() {
   }
 
   useEffect(() => {
+    if (readOnly) return;
     if (params.get("new") === "1") setNewOpen(true);
     if (params.get("legacy") === "1") {
       setLegacyMode(true);
@@ -243,7 +247,7 @@ function MapInner() {
       setAttachToOrderId(toOrder);
       setNewOpen(true);
     }
-  }, [params]);
+  }, [params, readOnly]);
 
   useEffect(() => {
     const rackRaw = params.get("rack");
@@ -510,6 +514,7 @@ function MapInner() {
           {stats.orders} užsakymai · {stats.active} prekės
           {stats.floors > 0 ? ` · ${stats.floors} ant grindų` : ""}
         </span>
+        {!readOnly && (
         <button
           type="button"
           className={`min-h-10 !px-3 !py-2 !text-xs sm:!py-1.5 ${
@@ -519,6 +524,7 @@ function MapInner() {
         >
           {markFloor ? "Baigti" : "Ant grindų"}
         </button>
+        )}
         <button
           type="button"
           className="btn-secondary min-h-10 !px-3 !py-2 !text-xs sm:!py-1.5"
@@ -542,16 +548,16 @@ function MapInner() {
           <p className="mt-1.5 leading-relaxed text-yellow-900">
             {moveIsPlace ? (
               <>
-                Spausk žalią laisvą vietą{" "}
-                <span className="font-semibold">arba nubrėžk plotą</span> ant
-                stelažo (tempk pele / pirštu).
+                Spausk žalią vietą, nubrėžk plotą ant stelažo,{" "}
+                <span className="font-semibold">arba tempk ant grindų</span> —
+                ten padėsi prekę.
               </>
             ) : (
               <>
                 <span className="font-medium">2 žingsnis:</span> spausk žalią
-                laisvą vietą{" "}
-                <span className="font-semibold">arba nubrėžk plotą</span> ant
-                stelažo (tempk pele / pirštu). Ne ten, kur stovi dabar.
+                vietą, nubrėžk plotą ant stelažo,{" "}
+                <span className="font-semibold">arba tempk ant grindų</span>.
+                Ne ten, kur stovi dabar.
               </>
             )}
           </p>
@@ -635,6 +641,22 @@ function MapInner() {
             onHighlightChange={setFocusHighlight}
             onPick={handlePick}
             onFloorDraftComplete={(d) => {
+              if (moveUnitId) {
+                const moving = state.units.find((u) => u.id === moveUnitId);
+                const { state: next, area } = getOrCreateFloorAreaForDraft(
+                  loadState(),
+                  {
+                    x: d.x,
+                    z: d.z,
+                    w: d.w,
+                    d: d.d,
+                    label: moving?.labelTitle || "Ant grindų",
+                  },
+                );
+                moveUnitToLocation(next, moveUnitId, { floorAreaId: area.id });
+                finishMove("Perkelta ant grindų");
+                return;
+              }
               setMarkFloor(false);
               setFloorDraft(d);
             }}

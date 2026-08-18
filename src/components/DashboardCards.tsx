@@ -11,6 +11,7 @@ import {
   loadState,
 } from "@/lib/demo-store";
 import { useWms } from "@/lib/use-wms";
+import { useWmsAccess } from "@/components/WmsAccessProvider";
 
 export function DashboardCards() {
   const state = useWms();
@@ -20,6 +21,7 @@ export function DashboardCards() {
     null,
   );
   const summary = useMemo(() => getDashboardSummary(state), [state]);
+  const { readOnly } = useWmsAccess();
 
   function openHoldFromExpected(shipmentId: string) {
     setHoldFromExpectedId(shipmentId);
@@ -37,6 +39,7 @@ export function DashboardCards() {
             Pradžia
           </h1>
         </div>
+        {!readOnly && (
         <div className="page-mobile-stack w-full max-w-xs sm:max-w-none">
           <button
             type="button"
@@ -52,6 +55,7 @@ export function DashboardCards() {
             Nežinai projekto — skaičius ir foto
           </p>
         </div>
+        )}
       </div>
 
       <div className="dashboard-grid">
@@ -253,6 +257,8 @@ export function DashboardCards() {
                           Dokumentas
                         </a>
                       )}
+                      {!readOnly && (
+                        <>
                       <button
                         type="button"
                         className="text-sm font-semibold text-sky-900 underline decoration-sky-200 underline-offset-2"
@@ -275,6 +281,8 @@ export function DashboardCards() {
                       >
                         Pašalinti
                       </button>
+                        </>
+                      )}
                       {a.orderId ? (
                         <Link
                           href={`/orders/${a.orderId}`}

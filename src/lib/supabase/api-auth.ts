@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "./server";
+import { roleFromUser, type WmsRole } from "./username-auth";
+import type { User } from "@supabase/supabase-js";
 
-export async function requireApiUser() {
+export async function requireApiUser(opts?: { write?: boolean }) {
   const supabase = await createClient();
   if (!supabase) {
     return {
-      user: null,
+      user: null as User | null,
+      role: "editor" as WmsRole,
       response: NextResponse.json(
         { error: "Supabase not configured" },
         { status: 503 },
@@ -20,10 +23,23 @@ export async function requireApiUser() {
 
   if (error || !user) {
     return {
-      user: null,
+      user: null as User | null,
+      role: "editor" as WmsRole,
       response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     };
   }
 
-  return { user, response: null };
+  const role = roleFromUser(user);
+  if (opts?.write && role === "viewer") {
+    return {
+      user,
+      role,
+      response: NextResponse.json(
+        { error: "Peržiūros paskyra — keisti negalima" },
+        { status: 403 },
+      ),
+    };
+  }
+
+  return { user, role, response: null };
 }
