@@ -34,6 +34,11 @@ export function attachmentViewHref(
   return null;
 }
 
+export function isLikelyImageFile(file: File): boolean {
+  if (file.type.startsWith("image/")) return true;
+  return /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i.test(file.name);
+}
+
 /** Įkelia į serverio saugyklą. */
 export async function uploadAttachment(file: File): Promise<{
   url: string;

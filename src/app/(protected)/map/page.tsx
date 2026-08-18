@@ -82,6 +82,7 @@ function MapInner() {
     null,
   );
   const [markFloor, setMarkFloor] = useState(false);
+  const [drawFloorForMove, setDrawFloorForMove] = useState(false);
   const [floorDraft, setFloorDraft] = useState<FloorDraft | null>(null);
   const [shelfDraft, setShelfDraft] = useState<ShelfDraft | null>(null);
   const [hintText, setHintText] = useState<string | null>(null);
@@ -106,6 +107,7 @@ function MapInner() {
     setMoveIsPlace(false);
     moveInitRef.current = null;
     setMoveFeedback(null);
+    setDrawFloorForMove(false);
     canvasRef.current?.clearFocus();
   }
 
@@ -117,6 +119,7 @@ function MapInner() {
     setMoveIsPlace(false);
     moveInitRef.current = null;
     setMoveFeedback(null);
+    setDrawFloorForMove(false);
     setFocusHighlight(false);
     canvasRef.current?.clearFocus();
     setHintText(done);
@@ -303,6 +306,7 @@ function MapInner() {
     moveInitRef.current = move;
     setMoveUnitId(move);
     setMoveFeedback(null);
+    setDrawFloorForMove(false);
     focusAppliedRef.current = true;
     pendingFocusRef.current = null;
     const placing = params.get("place") === "1";
@@ -535,7 +539,7 @@ function MapInner() {
         </button>
       </div>
 
-      {markFloor && (
+      {markFloor && !moveUnitId && (
         <div className="mx-3 shrink-0 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950 sm:mx-0">
           Nubrėžk stačiakampį ant grindų — ten galėsi padėti prekes. Kol žymi,
           kamera nesisuka.
@@ -548,31 +552,51 @@ function MapInner() {
           <p className="mt-1.5 leading-relaxed text-yellow-900">
             {moveIsPlace ? (
               <>
-                Spausk žalią vietą, nubrėžk plotą ant stelažo,{" "}
-                <span className="font-semibold">arba tempk ant grindų</span> —
-                ten padėsi prekę.
+                Spausk žalią vietą, nubrėžk plotą ant stelažo, arba jau esamą
+                plotą ant grindų. Naują plotą ant grindų — tik mygtuku žemiau.
               </>
             ) : (
               <>
                 <span className="font-medium">2 žingsnis:</span> spausk žalią
-                vietą, nubrėžk plotą ant stelažo,{" "}
-                <span className="font-semibold">arba tempk ant grindų</span>.
-                Ne ten, kur stovi dabar.
+                vietą arba nubrėžk plotą ant stelažo. Kamerą suk sukdamas
+                pirštu — prekė nepersikels. Naują plotą ant grindų — tik
+                paspaudus „Perkelti ant grindų“.
               </>
             )}
           </p>
+          {drawFloorForMove && (
+            <p className="mt-1.5 font-medium text-blue-900">
+              Nubrėžk stačiakampį ant grindų. Kol žymi — kamera nesisuka.
+            </p>
+          )}
           {moveFeedback && (
             <p className="mt-2 rounded-lg bg-white/80 px-2.5 py-1.5 text-sm font-medium text-amber-900">
               {moveFeedback}
             </p>
           )}
-          <button
-            type="button"
-            className="btn-secondary mt-3 !px-3 !py-2 !text-xs"
-            onClick={clearMapFocus}
-          >
-            {moveIsPlace ? "Padėsiu vėliau" : "Atšaukti perkėlimą"}
-          </button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={`!px-3 !py-2 !text-xs ${
+                drawFloorForMove ? "btn-primary" : "btn-secondary"
+              }`}
+              onClick={() => {
+                setMarkFloor(false);
+                setDrawFloorForMove((v) => !v);
+              }}
+            >
+              {drawFloorForMove
+                ? "Baigti žymėjimą ant grindų"
+                : "Perkelti ant grindų"}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary !px-3 !py-2 !text-xs"
+              onClick={clearMapFocus}
+            >
+              {moveIsPlace ? "Padėsiu vėliau" : "Atšaukti perkėlimą"}
+            </button>
+          </div>
         </div>
       )}
 
@@ -636,7 +660,7 @@ function MapInner() {
             ref={canvasRef}
             state={state}
             preset={preset}
-            markFloorMode={markFloor}
+            markFloorMode={markFloor || (!!moveUnitId && drawFloorForMove)}
             moveMode={!!moveUnitId}
             onHighlightChange={setFocusHighlight}
             onPick={handlePick}
@@ -654,6 +678,7 @@ function MapInner() {
                   },
                 );
                 moveUnitToLocation(next, moveUnitId, { floorAreaId: area.id });
+                setDrawFloorForMove(false);
                 finishMove("Perkelta ant grindų");
                 return;
               }

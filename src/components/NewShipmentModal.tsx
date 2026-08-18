@@ -13,7 +13,7 @@ import {
   loadState,
   setShipmentAttachment,
 } from "@/lib/demo-store";
-import { holdingPhotoHrefs, mediaViewHref, shipmentAttachmentHref, uploadAttachment } from "@/lib/attachments";
+import { holdingPhotoHrefs, isLikelyImageFile, mediaViewHref, shipmentAttachmentHref, uploadAttachment } from "@/lib/attachments";
 import { pushWmsStateNow } from "@/lib/wms-sync";
 import { locationCode, rackLevelDefs, zoneForRack } from "@/lib/locations";
 import { formatLocationHuman } from "@/lib/ui-labels";
@@ -278,8 +278,12 @@ export function NewShipmentModal({
     setPhotoUploading(true);
     setError("");
     const next = [...orderPhotoUrls];
+    let skipped = 0;
     for (const file of Array.from(list)) {
-      if (!file.type.startsWith("image/")) continue;
+      if (!isLikelyImageFile(file)) {
+        skipped += 1;
+        continue;
+      }
       if (next.length >= 6) break;
       const uploaded = await uploadAttachment(file);
       if (!uploaded.storageUrl) {
@@ -289,6 +293,9 @@ export function NewShipmentModal({
         break;
       }
       if (!next.includes(uploaded.storageUrl)) next.push(uploaded.storageUrl);
+    }
+    if (next.length === orderPhotoUrls.length && skipped > 0) {
+      setError("Pasirink nuotrauką (jpg, png, heic)");
     }
     setOrderPhotoUrls(next);
     setPhotoUploading(false);
@@ -464,6 +471,7 @@ export function NewShipmentModal({
         palletCount: palletCount > 0 ? palletCount : null,
         notes: mergeUniqueNotes(doc.notes, placementNotes),
         holdingPhotoUrls: orderPhotoUrls,
+        notePhotoUrls: orderPhotoUrls,
         attachmentUrl,
         attachmentStoragePath,
         documentName,
@@ -480,19 +488,28 @@ export function NewShipmentModal({
         footprintOffsetX: useSame ? undefined : opts.footprintOffsetX,
         footprintOffsetZ: useSame ? undefined : opts.footprintOffsetZ,
       });
+      if (!result.unitId) {
+        setError(
+          "Nepavyko priskirti prie šio užsakymo — pasirink kitą arba sukurk naują",
+        );
+        return;
+      }
       let state = result.state;
       if (fromIncomingShipmentId) {
         state = completeExpectedArrival(state, fromIncomingShipmentId);
-        const newShip = state.shipments.find(
-          (s) => s.orderId === existingOrderId,
-        );
-        if (newShip) {
+        const newUnit = state.units.find((u) => u.id === result.unitId);
+        if (newUnit?.shipmentId) {
           state = copyIncomingAttachmentToShipment(
             state,
             fromIncomingShipmentId,
-            newShip.id,
+            newUnit.shipmentId,
           );
         }
+        state = copyHoldingPhotosToOrder(
+          state,
+          fromIncomingShipmentId,
+          existingOrderId,
+        );
       }
       void pushWmsStateNow(state);
       const orderId = existingOrderId;
@@ -505,7 +522,7 @@ export function NewShipmentModal({
         );
       }
       const needMapPick =
-        !!result.unitId && (!result.placed || result.conflict) && !useSame;
+        !!result.unitId && (!result.placed || result.conflict);
       if (needMapPick) {
         const order = state.orders.find((o) => o.id === orderId);
         const label = encodeURIComponent(
@@ -1380,9 +1397,12 @@ export function NewShipmentModal({
           <button
             type="button"
             className="btn-primary w-full sm:w-auto"
-            onClick={save}
+            disabled={photoUploading}
+            onClick={() => void save()}
           >
-            {attachMode === "existing"
+            {photoUploading
+              ? "Įkeliama nuotrauka…"
+              : attachMode === "existing"
               ? "Įrašyti atvykimą"
               : placeNow && (selectedLocationId || prefillFloorAreaId)
               ? isLegacy

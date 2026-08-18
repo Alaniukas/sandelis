@@ -111,6 +111,7 @@ type ShelfPointerDownOpts = {
 
 const SHELF_TAP_PX = 14;
 const SHELF_MIN_DRAW_M = 0.35;
+const FLOOR_MIN_DRAW_M = 0.45;
 
 const CX = ROOM.length / 2;
 const CZ = ROOM.width / 2;
@@ -448,14 +449,12 @@ function useSkipRaycastWhen(active: boolean) {
 
 function Floor({
   markMode,
-  moveFloorDraw,
   draftStart,
   draftCurrent,
   onFloorPointer,
   maps,
 }: {
   markMode: boolean;
-  moveFloorDraw: boolean;
   draftStart: [number, number] | null;
   draftCurrent: [number, number] | null;
   onFloorPointer: (
@@ -554,54 +553,6 @@ function Floor({
     };
   }, [markMode, camera, gl]);
 
-  useEffect(() => {
-    if (!moveFloorDraw || markMode) return;
-    const el = gl.domElement;
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const raycaster = new THREE.Raycaster();
-    const ndc = new THREE.Vector2();
-    const hit = new THREE.Vector3();
-    let lastPt: [number, number] | null = null;
-
-    function project(clientX: number, clientY: number): [number, number] | null {
-      const rect = el.getBoundingClientRect();
-      if (rect.width < 1 || rect.height < 1) return null;
-      ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(ndc, camera);
-      if (!raycaster.ray.intersectPlane(plane, hit)) return null;
-      return fromLocal(hit.x, hit.z);
-    }
-
-    function onMove(e: PointerEvent) {
-      if (!drawing.current) return;
-      e.preventDefault();
-      const p = project(e.clientX, e.clientY);
-      if (!p) return;
-      lastPt = p;
-      onFloorRef.current(p[0], p[1], "move");
-    }
-
-    function onUp(e: PointerEvent) {
-      if (!drawing.current) return;
-      e.preventDefault();
-      drawing.current = false;
-      const p = project(e.clientX, e.clientY) ?? lastPt;
-      lastPt = null;
-      if (p) onFloorRef.current(p[0], p[1], "up");
-    }
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      drawing.current = false;
-    };
-  }, [moveFloorDraw, markMode, camera, gl]);
-
   let preview: FloorDraft | null = null;
   if (draftStart && draftCurrent) {
     const x0 = Math.min(draftStart[0], draftCurrent[0]);
@@ -626,14 +577,6 @@ function Floor({
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, 0, 0]}
         receiveShadow
-        onPointerDown={(e) => {
-          if (!moveFloorDraw || markMode) return;
-          if (e.button !== 0) return;
-          e.stopPropagation();
-          drawing.current = true;
-          const p = fromLocal(e.point.x, e.point.z);
-          onFloorRef.current(p[0], p[1], "down");
-        }}
       >
         <planeGeometry args={[ROOM.length + 0.4, ROOM.width + 0.4]} />
         <meshStandardMaterial map={maps.concrete} roughness={0.95} metalness={0} />
@@ -2133,7 +2076,6 @@ function Scene({
   onSelect,
   preset,
   markMode,
-  moveFloorDraw,
   draftStart,
   draftCurrent,
   onFloorPointer,
@@ -2154,7 +2096,6 @@ function Scene({
   onSelect: (info: PickInfo) => void;
   preset: ViewPreset;
   markMode: boolean;
-  moveFloorDraw: boolean;
   draftStart: [number, number] | null;
   draftCurrent: [number, number] | null;
   onFloorPointer: (wx: number, wz: number, kind: "down" | "move" | "up") => void;
@@ -2289,7 +2230,6 @@ function Scene({
 
       <Floor
         markMode={markMode}
-        moveFloorDraw={moveFloorDraw}
         draftStart={draftStart}
         draftCurrent={draftCurrent}
         onFloorPointer={onFloorPointer}
@@ -2532,12 +2472,12 @@ export const Warehouse3D = forwardRef<
   }, []);
 
   useEffect(() => {
-    if (markFloorMode || moveMode) return;
+    if (markFloorMode) return;
     setDraftStart(null);
     setDraftCurrent(null);
     draftStartRef.current = null;
     drawing.current = false;
-  }, [markFloorMode, moveMode]);
+  }, [markFloorMode]);
 
   useImperativeHandle(
     ref,
@@ -2716,7 +2656,7 @@ export const Warehouse3D = forwardRef<
     wz: number,
     kind: "down" | "move" | "up",
   ) {
-    if (!markFloorMode && !moveMode) return;
+    if (!markFloorMode) return;
     const clamped: [number, number] = [
       Math.min(ROOM.length - 0.2, Math.max(0.2, wx)),
       Math.min(ROOM.width - 0.2, Math.max(0.2, wz)),
@@ -2735,15 +2675,18 @@ export const Warehouse3D = forwardRef<
       const z0 = Math.min(start[1], clamped[1]);
       const x1 = Math.max(start[0], clamped[0]);
       const z1 = Math.max(start[1], clamped[1]);
-      const draft: FloorDraft = {
-        x: (x0 + x1) / 2,
-        z: (z0 + z1) / 2,
-        w: Math.max(0.35, x1 - x0),
-        d: Math.max(0.35, z1 - z0),
-      };
       draftStartRef.current = null;
       setDraftStart(null);
       setDraftCurrent(null);
+      const w = x1 - x0;
+      const d = z1 - z0;
+      if (w < FLOOR_MIN_DRAW_M && d < FLOOR_MIN_DRAW_M) return;
+      const draft: FloorDraft = {
+        x: (x0 + x1) / 2,
+        z: (z0 + z1) / 2,
+        w: Math.max(FLOOR_MIN_DRAW_M, w),
+        d: Math.max(FLOOR_MIN_DRAW_M, d),
+      };
       onFloorDraftComplete?.(draft);
     }
   }
@@ -2791,7 +2734,6 @@ export const Warehouse3D = forwardRef<
               selectedCode={selectedCode}
               preset={preset}
               markMode={markFloorMode}
-              moveFloorDraw={moveMode && !markFloorMode}
               draftStart={draftStart}
               draftCurrent={draftCurrent}
               onFloorPointer={onFloorPointer}
@@ -2853,7 +2795,7 @@ export const Warehouse3D = forwardRef<
             {markFloorMode
               ? "Tempk ant grindų — pažymėk plotą"
               : moveMode
-                ? "Perkėlimas: spausk vietą, tempk ant stelažo arba nubrėžk plotą ant grindų"
+                ? "Perkėlimas: spausk žalią vietą arba jau esamą plotą ant grindų"
                 : shelfDrawingUi
                 ? isMobileViewport
                   ? "Tempk pirštu — atleisk kai baigsi"

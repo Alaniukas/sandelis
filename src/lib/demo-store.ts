@@ -614,6 +614,7 @@ export function addShipmentToOrder(
     notes?: string;
     holdingPhotoUrls?: string[];
     holdingPhotoStoragePaths?: string[];
+    notePhotoUrls?: string[];
     attachmentUrl?: string | null;
     attachmentStoragePath?: string | null;
     documentName?: string | null;
@@ -755,9 +756,22 @@ export function addShipmentToOrder(
       unit,
     ],
     floorAreas,
-    orders: state.orders.map((o) =>
-      o.id === orderId ? { ...o, updatedAt: now } : o,
-    ),
+    orders: state.orders.map((o) => {
+      if (o.id !== orderId) return o;
+      const extra = [
+        ...(data.notePhotoUrls ?? []),
+        ...(data.holdingPhotoUrls ?? []),
+      ].filter(Boolean);
+      const merged = [...(o.notePhotoUrls ?? [])];
+      for (const url of extra) {
+        if (!merged.includes(url)) merged.push(url);
+      }
+      return {
+        ...o,
+        updatedAt: now,
+        notePhotoUrls: merged.length ? merged : o.notePhotoUrls,
+      };
+    }),
   };
   saveState(next);
   return { state: next, placed, conflict, unitId: unit.id };

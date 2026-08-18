@@ -48,6 +48,7 @@ export function LocationDetailModal({
   const { readOnly } = useWmsAccess();
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
+  const issueSectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setIssueOpen(false);
@@ -56,7 +57,14 @@ export function LocationDetailModal({
     setPhotoPreview(null);
     setIssueError("");
     setIssueBusy(false);
+    setShowMore(false);
+    setShowEdit(false);
   }, [pick]);
+
+  useEffect(() => {
+    if (!issueOpen) return;
+    issueSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [issueOpen]);
 
   const units = useMemo(() => {
     if (!pick) return [];
@@ -226,6 +234,20 @@ export function LocationDetailModal({
 
     if (!primaryUnit || !primaryOrder) return null;
 
+    if (issueOpen) {
+      return (
+        <div className="modal-footer-actions">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setIssueOpen(false)}
+          >
+            Atšaukti atsiėmimą
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div className="modal-footer-actions">
         <button
@@ -244,6 +266,16 @@ export function LocationDetailModal({
         >
           Perkelti
         </button>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => {
+            setIssueOpen(true);
+            setShowMore(false);
+          }}
+        >
+          Klientas atsiėmė
+        </button>
         <Link
           href={`/orders/${primaryOrder.id}`}
           className="btn-secondary"
@@ -252,58 +284,6 @@ export function LocationDetailModal({
           Užsakymas
         </Link>
         {moreBtn}
-        {showMore && (
-          <>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => {
-                setIssueOpen(true);
-                setShowMore(true);
-              }}
-            >
-              Klientas atsiėmė
-            </button>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => setShowEdit((v) => !v)}
-            >
-              {showEdit ? "Slėpti redagavimą" : "Keisti informaciją"}
-            </button>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => {
-                if (
-                  !confirm(
-                    "Nuimti prekę iš šios vietos? Užsakymas liks — vėliau galėsi padėti kitur.",
-                  )
-                )
-                  return;
-                unplaceUnit(loadState(), primaryUnit.id);
-              }}
-            >
-              Nuimti iš vietos
-            </button>
-            <button
-              type="button"
-              className="btn-danger"
-              onClick={() => {
-                if (
-                  !confirm(
-                    "Ištrinti visą užsakymą ir visas dėžes? Atgal neatstatysi.",
-                  )
-                )
-                  return;
-                deleteOrder(loadState(), primaryOrder.id);
-                onClose();
-              }}
-            >
-              Ištrinti užsakymą
-            </button>
-          </>
-        )}
       </div>
     );
   }
@@ -404,12 +384,58 @@ export function LocationDetailModal({
                 </section>
               )}
 
+              {primaryOrder && showMore && (
+                <div className="space-y-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
+                  <button
+                    type="button"
+                    className="btn-secondary w-full"
+                    onClick={() => setShowEdit((v) => !v)}
+                  >
+                    {showEdit ? "Slėpti redagavimą" : "Keisti informaciją"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary w-full"
+                    onClick={() => {
+                      if (
+                        !confirm(
+                          "Nuimti prekę iš šios vietos? Užsakymas liks — vėliau galėsi padėti kitur.",
+                        )
+                      )
+                        return;
+                      unplaceUnit(loadState(), primaryUnit!.id);
+                    }}
+                  >
+                    Nuimti iš vietos
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger w-full"
+                    onClick={() => {
+                      if (
+                        !confirm(
+                          "Ištrinti visą užsakymą ir visas dėžes? Atgal neatstatysi.",
+                        )
+                      )
+                        return;
+                      deleteOrder(loadState(), primaryOrder.id);
+                      onClose();
+                    }}
+                  >
+                    Ištrinti užsakymą
+                  </button>
+                </div>
+              )}
+
               {primaryOrder && showEdit && (
                 <OrderEditSection orderId={primaryOrder.id} />
               )}
 
               {issueOpen && primaryUnit && (
-                <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                <section
+                  ref={issueSectionRef}
+                  className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3"
+                >
                   <h3 className="section-label">Klientas atsiėmė</h3>
                   <label className="block text-sm">
                     <span className="mb-1 block font-medium text-stone-700">
